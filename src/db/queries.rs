@@ -1,6 +1,6 @@
 use rusqlite::{Connection, params};
 
-use crate::models::{Category, Config, DurationSecs, Session, Timestamp};
+use crate::models::{Category, CategoryStat, Config, DurationSecs, Session, Timestamp};
 
 /// Save a session to the database
 pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<i64> {
@@ -52,7 +52,7 @@ pub fn get_time_by_category(
     conn: &Connection,
     start: i64,
     end: i64,
-) -> rusqlite::Result<Vec<(String, i64)>> {
+) -> rusqlite::Result<Vec<CategoryStat>> {
     let mut stmt = conn.prepare(
         "SELECT category, SUM(duration_secs) as total
          FROM sessions
@@ -61,7 +61,12 @@ pub fn get_time_by_category(
          ORDER BY total DESC",
     )?;
 
-    let results = stmt.query_map(params![start, end], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let results = stmt.query_map(params![start, end], |row| {
+        Ok(CategoryStat {
+            name: row.get(0)?,
+            total_seconds: row.get(1)?,
+        })
+    })?;
 
     results.collect()
 }
@@ -192,8 +197,10 @@ mod tests {
         let totals = get_time_by_category(&db.conn, 0, 5000).unwrap();
         assert_eq!(totals.len(), 2);
         // coding: 2000 seconds, work: 1000 seconds
-        assert_eq!(totals[0], ("coding".to_string(), 2000));
-        assert_eq!(totals[1], ("work".to_string(), 1000));
+        assert_eq!(totals[0].name, "coding");
+        assert_eq!(totals[0].total_seconds, 2000);
+        assert_eq!(totals[1].name, "work");
+        assert_eq!(totals[1].total_seconds, 1000);
     }
 
     #[test]

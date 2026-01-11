@@ -5,7 +5,7 @@ use ratatui::{DefaultTerminal, Frame, widgets::ListState};
 use crate::config::TICK_RATE;
 use crate::db::{self, Database};
 use crate::event::{AppEvent, poll_event};
-use crate::models::{Category, Config, DurationSecs, Session, Timestamp};
+use crate::models::{Category, CategoryStat, Config, DurationSecs, Session, Timestamp};
 use crate::timer::PomodoroTimer;
 use crate::ui::{
     render_history, render_input_modal, render_settings_modal, render_stats, render_timer,
@@ -179,7 +179,7 @@ pub struct App {
 
     // Stats view state
     pub stats_period: StatsPeriod,
-    pub category_stats: Vec<(String, i64)>,
+    pub category_stats: Vec<CategoryStat>,
 
     // Database
     db: Option<Database>,

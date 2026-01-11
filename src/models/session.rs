@@ -122,6 +122,13 @@ impl Category {
     }
 }
 
+/// Aggregated time statistics for a category
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CategoryStat {
+    pub name: String,
+    pub total_seconds: i64,
+}
+
 /// Timer configuration settings
 #[derive(Debug, Clone)]
 pub struct Config {
