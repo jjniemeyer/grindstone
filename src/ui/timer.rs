@@ -73,7 +73,7 @@ pub fn render_timer(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(phase_line).centered(), chunks[3]);
 
     // Session info
-    let session_info = if let Some(ref session) = app.current_session {
+    let session_info = if let Some(session) = app.current_session() {
         format!("Session: \"{}\" ({})", session.name, session.category)
     } else {
         "No session - press [n] to start a new session".to_string()

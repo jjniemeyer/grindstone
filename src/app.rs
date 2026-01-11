@@ -117,6 +117,18 @@ pub enum ModalState {
     Settings,
 }
 
+/// The current session lifecycle state
+#[derive(Debug, Clone, Default)]
+pub enum SessionPhase {
+    /// No session created
+    #[default]
+    Inactive,
+    /// Session created but not currently in a work period
+    Ready(Session),
+    /// Session in active work period
+    Active { session: Session, start_time: i64 },
+}
+
 impl SettingsField {
     pub fn next(&self) -> Self {
         match self {
@@ -143,8 +155,7 @@ pub struct App {
     pub view: View,
     pub modal: ModalState,
     pub timer: PomodoroTimer,
-    pub current_session: Option<Session>,
-    pub session_start_time: Option<i64>,
+    pub session_phase: SessionPhase,
 
     // Input modal state
     pub input_field: InputField,
@@ -178,8 +189,7 @@ impl Default for App {
             view: View::Timer,
             modal: ModalState::None,
             timer: PomodoroTimer::new(),
-            current_session: None,
-            session_start_time: None,
+            session_phase: SessionPhase::Inactive,
             input_field: InputField::Name,
             input_name: String::new(),
             input_description: String::new(),
@@ -229,6 +239,19 @@ impl App {
         }
 
         Ok(app)
+    }
+
+    /// Get the current session, if any
+    pub fn current_session(&self) -> Option<&Session> {
+        match &self.session_phase {
+            SessionPhase::Ready(s) | SessionPhase::Active { session: s, .. } => Some(s),
+            SessionPhase::Inactive => None,
+        }
+    }
+
+    /// Check if a session exists (ready or active)
+    fn has_session(&self) -> bool {
+        !matches!(self.session_phase, SessionPhase::Inactive)
     }
 
     /// Run the application's main loop
@@ -314,7 +337,7 @@ impl App {
                     self.timer.skip_break();
                 } else if self.timer.is_paused() {
                     self.timer.start();
-                } else if self.timer.is_idle() && self.current_session.is_some() {
+                } else if self.timer.is_idle() && self.has_session() {
                     self.start_timer();
                 }
             }
@@ -548,7 +571,20 @@ impl App {
 
     /// Start the timer
     fn start_timer(&mut self) {
-        self.session_start_time = Some(Local::now().timestamp());
+        let phase = std::mem::take(&mut self.session_phase);
+
+        self.session_phase = match phase {
+            SessionPhase::Ready(session) => SessionPhase::Active {
+                session,
+                start_time: Local::now().timestamp(),
+            },
+            SessionPhase::Active { session, .. } => SessionPhase::Active {
+                session,
+                start_time: Local::now().timestamp(),
+            },
+            SessionPhase::Inactive => SessionPhase::Inactive,
+        };
+
         self.timer.start();
     }
 
@@ -561,7 +597,7 @@ impl App {
             Some(self.input_description.clone())
         };
 
-        self.current_session = Some(Session {
+        let session = Session {
             id: None,
             name: self.input_name.clone(),
             description,
@@ -569,25 +605,33 @@ impl App {
             started_at: 0,
             ended_at: 0,
             duration_secs: 0,
-        });
+        };
+
+        self.session_phase = SessionPhase::Ready(session);
     }
 
     /// Complete the current session and save to database
     fn complete_session(&mut self) {
-        if let (Some(session), Some(start_time)) =
-            (&mut self.current_session, self.session_start_time)
-        {
-            let end_time = Local::now().timestamp();
-            session.started_at = start_time;
-            session.ended_at = end_time;
-            session.duration_secs = end_time - start_time;
+        let phase = std::mem::take(&mut self.session_phase);
 
-            if let Some(ref db) = self.db {
-                let _ = db::save_session(&db.conn, session);
+        self.session_phase = match phase {
+            SessionPhase::Active {
+                mut session,
+                start_time,
+            } => {
+                let end_time = Local::now().timestamp();
+                session.started_at = start_time;
+                session.ended_at = end_time;
+                session.duration_secs = end_time - start_time;
+
+                if let Some(ref db) = self.db {
+                    let _ = db::save_session(&db.conn, &session);
+                }
+
+                SessionPhase::Ready(session)
             }
-
-            self.session_start_time = None;
-        }
+            other => other,
+        };
     }
 
     /// Refresh data from database
