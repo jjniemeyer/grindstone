@@ -66,7 +66,7 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
         Paragraph::new(render_row(
             SettingsField::WorkDuration,
             "Work Duration:",
-            app.config.work_duration_secs,
+            app.editing_config.work_duration_secs,
             "min",
         )),
         chunks[0],
@@ -76,7 +76,7 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
         Paragraph::new(render_row(
             SettingsField::ShortBreak,
             "Short Break:",
-            app.config.short_break_secs,
+            app.editing_config.short_break_secs,
             "min",
         )),
         chunks[1],
@@ -86,7 +86,7 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
         Paragraph::new(render_row(
             SettingsField::LongBreak,
             "Long Break:",
-            app.config.long_break_secs,
+            app.editing_config.long_break_secs,
             "min",
         )),
         chunks[2],
@@ -96,7 +96,7 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
         Paragraph::new(render_row(
             SettingsField::SessionsUntilLong,
             "Sessions until long break:",
-            app.config.sessions_until_long_break,
+            app.editing_config.sessions_until_long_break,
             "",
         )),
         chunks[3],

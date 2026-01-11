@@ -149,6 +149,7 @@ pub struct App {
     pub settings_field: SettingsField,
     pub settings_editing_value: String,
     pub config: Config,
+    pub editing_config: Config,
 
     // History view state
     pub sessions: Vec<Session>,
@@ -180,6 +181,7 @@ impl Default for App {
             settings_field: SettingsField::WorkDuration,
             settings_editing_value: String::new(),
             config: Config::default(),
+            editing_config: Config::default(),
             sessions: Vec::new(),
             history_state: ListState::default(),
             stats_period: StatsPeriod::Day,
@@ -325,7 +327,8 @@ impl App {
             KeyCode::Char('c') => {
                 self.show_settings_modal = true;
                 self.settings_field = SettingsField::WorkDuration;
-                self.settings_editing_value = self.get_settings_field_value();
+                self.editing_config = self.config.clone();
+                self.settings_editing_value = self.get_editing_field_value();
             }
             _ => {}
         }
@@ -440,12 +443,14 @@ impl App {
                 self.show_settings_modal = false;
             }
             KeyCode::Tab | KeyCode::Down => {
+                self.apply_editing_value();
                 self.settings_field = self.settings_field.next();
-                self.settings_editing_value = self.get_settings_field_value();
+                self.settings_editing_value = self.get_editing_field_value();
             }
             KeyCode::Up => {
+                self.apply_editing_value();
                 self.settings_field = self.settings_field.prev();
-                self.settings_editing_value = self.get_settings_field_value();
+                self.settings_editing_value = self.get_editing_field_value();
             }
             KeyCode::Enter => {
                 self.save_settings();
@@ -461,37 +466,49 @@ impl App {
         }
     }
 
-    /// Get the current value for the selected settings field (as display string)
-    fn get_settings_field_value(&self) -> String {
+    /// Get the current value for the selected settings field from editing_config
+    fn get_editing_field_value(&self) -> String {
         match self.settings_field {
-            SettingsField::WorkDuration => (self.config.work_duration_secs / 60).to_string(),
-            SettingsField::ShortBreak => (self.config.short_break_secs / 60).to_string(),
-            SettingsField::LongBreak => (self.config.long_break_secs / 60).to_string(),
-            SettingsField::SessionsUntilLong => self.config.sessions_until_long_break.to_string(),
+            SettingsField::WorkDuration => {
+                (self.editing_config.work_duration_secs / 60).to_string()
+            }
+            SettingsField::ShortBreak => (self.editing_config.short_break_secs / 60).to_string(),
+            SettingsField::LongBreak => (self.editing_config.long_break_secs / 60).to_string(),
+            SettingsField::SessionsUntilLong => {
+                self.editing_config.sessions_until_long_break.to_string()
+            }
         }
     }
 
-    /// Save the current settings to the database and apply to timer
-    fn save_settings(&mut self) {
-        // Parse the editing value and update config
+    /// Apply the current editing value to editing_config
+    fn apply_editing_value(&mut self) {
         if let Ok(value) = self.settings_editing_value.parse::<i64>()
             && value > 0
         {
             match self.settings_field {
                 SettingsField::WorkDuration => {
-                    self.config.work_duration_secs = value * 60;
+                    self.editing_config.work_duration_secs = value * 60;
                 }
                 SettingsField::ShortBreak => {
-                    self.config.short_break_secs = value * 60;
+                    self.editing_config.short_break_secs = value * 60;
                 }
                 SettingsField::LongBreak => {
-                    self.config.long_break_secs = value * 60;
+                    self.editing_config.long_break_secs = value * 60;
                 }
                 SettingsField::SessionsUntilLong => {
-                    self.config.sessions_until_long_break = value;
+                    self.editing_config.sessions_until_long_break = value;
                 }
             }
         }
+    }
+
+    /// Save all settings to the database and apply to timer
+    fn save_settings(&mut self) {
+        // Apply the current field's value to editing_config
+        self.apply_editing_value();
+
+        // Commit editing_config to config
+        self.config = self.editing_config.clone();
 
         // Apply to timer
         self.timer.apply_config(&self.config);
@@ -585,5 +602,74 @@ impl App {
     /// Quit the application
     fn quit(&mut self) {
         self.running = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_settings_editing_buffer_isolation() {
+        let mut app = App::default();
+        app.config.work_duration_secs = 25 * 60;
+
+        // Simulate opening settings modal
+        app.editing_config = app.config.clone();
+        app.settings_field = SettingsField::WorkDuration;
+        app.settings_editing_value = "30".to_string();
+
+        // Apply the editing value (simulates navigation)
+        app.apply_editing_value();
+
+        // editing_config should be updated, config should not
+        assert_eq!(app.editing_config.work_duration_secs, 30 * 60);
+        assert_eq!(app.config.work_duration_secs, 25 * 60);
+    }
+
+    #[test]
+    fn test_settings_save_commits_all_changes() {
+        let mut app = App::default();
+        app.config.work_duration_secs = 25 * 60;
+        app.config.short_break_secs = 5 * 60;
+
+        // Simulate editing multiple fields
+        app.editing_config = app.config.clone();
+
+        // Edit work duration
+        app.settings_field = SettingsField::WorkDuration;
+        app.settings_editing_value = "30".to_string();
+        app.apply_editing_value();
+
+        // Navigate to short break and edit it
+        app.settings_field = SettingsField::ShortBreak;
+        app.settings_editing_value = "10".to_string();
+        app.apply_editing_value();
+
+        // Save should commit both changes
+        app.settings_field = SettingsField::ShortBreak;
+        app.settings_editing_value = "10".to_string();
+        app.save_settings();
+
+        assert_eq!(app.config.work_duration_secs, 30 * 60);
+        assert_eq!(app.config.short_break_secs, 10 * 60);
+    }
+
+    #[test]
+    fn test_settings_cancel_discards_changes() {
+        let mut app = App::default();
+        app.config.work_duration_secs = 25 * 60;
+
+        // Simulate editing
+        app.editing_config = app.config.clone();
+        app.settings_field = SettingsField::WorkDuration;
+        app.settings_editing_value = "30".to_string();
+        app.apply_editing_value();
+
+        // Cancel (just close modal without saving)
+        app.show_settings_modal = false;
+
+        // Config should be unchanged
+        assert_eq!(app.config.work_duration_secs, 25 * 60);
     }
 }

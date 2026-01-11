@@ -1,8 +1,5 @@
 use std::time::{Duration, Instant};
 
-use crate::config::{
-    DEFAULT_LONG_BREAK, DEFAULT_SHORT_BREAK, DEFAULT_WORK_DURATION, SESSIONS_UNTIL_LONG_BREAK,
-};
 use crate::models::Config;
 
 /// The current phase of the pomodoro cycle
@@ -56,13 +53,14 @@ pub struct PomodoroTimer {
 
 impl Default for PomodoroTimer {
     fn default() -> Self {
+        let config = Config::default();
         Self {
             phase: TimerPhase::Work,
             state: TimerState::Idle,
-            work_duration: DEFAULT_WORK_DURATION,
-            short_break: DEFAULT_SHORT_BREAK,
-            long_break: DEFAULT_LONG_BREAK,
-            sessions_until_long: SESSIONS_UNTIL_LONG_BREAK,
+            work_duration: Duration::from_secs(config.work_duration_secs as u64),
+            short_break: Duration::from_secs(config.short_break_secs as u64),
+            long_break: Duration::from_secs(config.long_break_secs as u64),
+            sessions_until_long: config.sessions_until_long_break as u8,
             sessions_completed: 0,
         }
     }
