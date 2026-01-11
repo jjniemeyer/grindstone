@@ -29,7 +29,7 @@ pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
 
     // Period selector
     let periods = ["Day", "Week", "Month", "Year"];
-    let selected_idx = match app.stats_period {
+    let selected_idx = match app.data.stats_period {
         StatsPeriod::Day => 0,
         StatsPeriod::Week => 1,
         StatsPeriod::Month => 2,
@@ -65,14 +65,19 @@ pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
     ])
     .split(chunks[2]);
 
-    render_bar_chart(frame, chart_chunks[0], &app.category_stats);
-    render_legend(frame, chart_chunks[1], &app.category_stats);
+    render_bar_chart(frame, chart_chunks[0], &app.data.category_stats);
+    render_legend(frame, chart_chunks[1], &app.data.category_stats);
 
     // Summary stats
-    let total_secs: i64 = app.category_stats.iter().map(|s| s.total_seconds).sum();
+    let total_secs: i64 = app
+        .data
+        .category_stats
+        .iter()
+        .map(|s| s.total_seconds)
+        .sum();
     let total_hours = total_secs / 3600;
     let total_mins = (total_secs % 3600) / 60;
-    let session_count = app.sessions.len();
+    let session_count = app.data.sessions.len();
 
     let summary = format!(
         "Total: {}h {}m  |  Sessions: {}",
