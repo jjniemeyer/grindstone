@@ -1,0 +1,463 @@
+use chrono::{Datelike, Local, TimeZone};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::{widgets::ListState, DefaultTerminal, Frame};
+
+use crate::config::TICK_RATE;
+use crate::db::{self, Database};
+use crate::event::{poll_event, AppEvent};
+use crate::models::{Category, Session};
+use crate::timer::PomodoroTimer;
+use crate::ui::{render_history, render_input_modal, render_stats, render_timer};
+
+/// The current view/screen
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum View {
+    #[default]
+    Timer,
+    History,
+    Stats,
+}
+
+/// The time period for statistics
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StatsPeriod {
+    #[default]
+    Day,
+    Week,
+    Month,
+    Year,
+}
+
+impl StatsPeriod {
+    /// Get the start and end timestamps for this period
+    pub fn time_range(&self) -> (i64, i64) {
+        let now = Local::now();
+        let today_start = Local
+            .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
+            .unwrap();
+
+        let (start, end) = match self {
+            StatsPeriod::Day => (today_start, now),
+            StatsPeriod::Week => {
+                let days_since_monday = now.weekday().num_days_from_monday();
+                let week_start = today_start - chrono::Duration::days(days_since_monday as i64);
+                (week_start, now)
+            }
+            StatsPeriod::Month => {
+                let month_start = Local
+                    .with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
+                    .unwrap();
+                (month_start, now)
+            }
+            StatsPeriod::Year => {
+                let year_start = Local.with_ymd_and_hms(now.year(), 1, 1, 0, 0, 0).unwrap();
+                (year_start, now)
+            }
+        };
+
+        (start.timestamp(), end.timestamp())
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            StatsPeriod::Day => StatsPeriod::Week,
+            StatsPeriod::Week => StatsPeriod::Month,
+            StatsPeriod::Month => StatsPeriod::Year,
+            StatsPeriod::Year => StatsPeriod::Day,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            StatsPeriod::Day => StatsPeriod::Year,
+            StatsPeriod::Week => StatsPeriod::Day,
+            StatsPeriod::Month => StatsPeriod::Week,
+            StatsPeriod::Year => StatsPeriod::Month,
+        }
+    }
+}
+
+/// Which input field is focused in the input modal
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InputField {
+    #[default]
+    Name,
+    Description,
+    Category,
+}
+
+impl InputField {
+    pub fn next(&self) -> Self {
+        match self {
+            InputField::Name => InputField::Description,
+            InputField::Description => InputField::Category,
+            InputField::Category => InputField::Name,
+        }
+    }
+}
+
+/// The main application state
+pub struct App {
+    pub running: bool,
+    pub view: View,
+    pub show_input_modal: bool,
+    pub timer: PomodoroTimer,
+    pub current_session: Option<Session>,
+    pub session_start_time: Option<i64>,
+
+    // Input modal state
+    pub input_field: InputField,
+    pub input_name: String,
+    pub input_description: String,
+    pub selected_category: usize,
+    pub categories: Vec<Category>,
+
+    // History view state
+    pub sessions: Vec<Session>,
+    pub history_state: ListState,
+
+    // Stats view state
+    pub stats_period: StatsPeriod,
+    pub category_stats: Vec<(String, i64)>,
+
+    // Database
+    db: Option<Database>,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self {
+            running: false,
+            view: View::Timer,
+            show_input_modal: false,
+            timer: PomodoroTimer::new(),
+            current_session: None,
+            session_start_time: None,
+            input_field: InputField::Name,
+            input_name: String::new(),
+            input_description: String::new(),
+            selected_category: 0,
+            categories: Category::defaults(),
+            sessions: Vec::new(),
+            history_state: ListState::default(),
+            stats_period: StatsPeriod::Day,
+            category_stats: Vec::new(),
+            db: None,
+        }
+    }
+}
+
+impl App {
+    /// Create a new application instance
+    pub fn new() -> color_eyre::Result<Self> {
+        let mut app = Self::default();
+
+        // Open database and load data
+        match Database::open() {
+            Ok(database) => {
+                // Load categories
+                if let Ok(cats) = db::get_categories(&database.conn) {
+                    if !cats.is_empty() {
+                        app.categories = cats;
+                    }
+                }
+                app.db = Some(database);
+                app.refresh_data();
+            }
+            Err(e) => {
+                eprintln!("Warning: Could not open database: {}", e);
+                // Continue without database
+            }
+        }
+
+        Ok(app)
+    }
+
+    /// Run the application's main loop
+    pub fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
+        self.running = true;
+
+        while self.running {
+            terminal.draw(|frame| self.render(frame))?;
+
+            if let Some(event) = poll_event(TICK_RATE)? {
+                match event {
+                    AppEvent::Key(key) => self.handle_key_event(key),
+                    AppEvent::Tick => self.handle_tick(),
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Render the current view
+    fn render(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+
+        match self.view {
+            View::Timer => render_timer(frame, area, self),
+            View::History => render_history(frame, area, self),
+            View::Stats => render_stats(frame, area, self),
+        }
+
+        // Render input modal on top if visible
+        if self.show_input_modal {
+            render_input_modal(frame, area, self);
+        }
+    }
+
+    /// Handle a key event
+    fn handle_key_event(&mut self, key: KeyEvent) {
+        // Handle modal input first
+        if self.show_input_modal {
+            self.handle_input_modal_key(key);
+            return;
+        }
+
+        // Global keys
+        match (key.modifiers, key.code) {
+            (_, KeyCode::Char('q')) | (_, KeyCode::Esc) => self.quit(),
+            (KeyModifiers::CONTROL, KeyCode::Char('c')) => self.quit(),
+            (_, KeyCode::Tab) => self.view = View::Timer,
+            (_, KeyCode::Char('h')) if self.view != View::History => {
+                self.view = View::History;
+                self.refresh_data();
+            }
+            (_, KeyCode::Char('t')) if self.view != View::Stats => {
+                self.view = View::Stats;
+                self.refresh_data();
+            }
+            _ => {
+                // View-specific keys
+                match self.view {
+                    View::Timer => self.handle_timer_key(key),
+                    View::History => self.handle_history_key(key),
+                    View::Stats => self.handle_stats_key(key),
+                }
+            }
+        }
+    }
+
+    /// Handle timer view keys
+    fn handle_timer_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('s') => {
+                if self.timer.phase.is_break() {
+                    self.timer.skip_break();
+                } else if self.timer.is_paused() {
+                    self.timer.start();
+                } else if self.timer.is_idle() {
+                    if self.current_session.is_some() {
+                        self.start_timer();
+                    }
+                }
+            }
+            KeyCode::Char('p') => {
+                if self.timer.is_running() {
+                    self.timer.pause();
+                }
+            }
+            KeyCode::Char('r') => {
+                self.timer.reset();
+            }
+            KeyCode::Char('n') => {
+                self.show_input_modal = true;
+                self.input_field = InputField::Name;
+                self.input_name.clear();
+                self.input_description.clear();
+                self.selected_category = 0;
+            }
+            _ => {}
+        }
+    }
+
+    /// Handle history view keys
+    fn handle_history_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                let len = self.sessions.len();
+                if len > 0 {
+                    let i = self.history_state.selected().map(|i| (i + 1) % len);
+                    self.history_state.select(i.or(Some(0)));
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                let len = self.sessions.len();
+                if len > 0 {
+                    let i = self
+                        .history_state
+                        .selected()
+                        .map(|i| if i == 0 { len - 1 } else { i - 1 });
+                    self.history_state.select(i.or(Some(0)));
+                }
+            }
+            KeyCode::Char('d') => {
+                // Delete selected session
+                if let Some(idx) = self.history_state.selected() {
+                    if idx < self.sessions.len() {
+                        if let Some(id) = self.sessions[idx].id {
+                            if let Some(ref db) = self.db {
+                                let _ = db::queries::delete_session(&db.conn, id);
+                                self.refresh_data();
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Handle stats view keys
+    fn handle_stats_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Left | KeyCode::Char('h') => {
+                self.stats_period = self.stats_period.prev();
+                self.refresh_data();
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                self.stats_period = self.stats_period.next();
+                self.refresh_data();
+            }
+            _ => {}
+        }
+    }
+
+    /// Handle input modal keys
+    fn handle_input_modal_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.show_input_modal = false;
+            }
+            KeyCode::Tab => {
+                self.input_field = self.input_field.next();
+            }
+            KeyCode::Enter => {
+                if !self.input_name.is_empty() {
+                    self.create_session();
+                    self.show_input_modal = false;
+                    self.start_timer();
+                }
+            }
+            KeyCode::Backspace => match self.input_field {
+                InputField::Name => {
+                    self.input_name.pop();
+                }
+                InputField::Description => {
+                    self.input_description.pop();
+                }
+                InputField::Category => {}
+            },
+            KeyCode::Left => {
+                if self.input_field == InputField::Category {
+                    if self.selected_category == 0 {
+                        self.selected_category = self.categories.len() - 1;
+                    } else {
+                        self.selected_category -= 1;
+                    }
+                }
+            }
+            KeyCode::Right => {
+                if self.input_field == InputField::Category {
+                    self.selected_category = (self.selected_category + 1) % self.categories.len();
+                }
+            }
+            KeyCode::Char(c) => match self.input_field {
+                InputField::Name => {
+                    self.input_name.push(c);
+                }
+                InputField::Description => {
+                    self.input_description.push(c);
+                }
+                InputField::Category => {}
+            },
+            _ => {}
+        }
+    }
+
+    /// Handle a timer tick
+    fn handle_tick(&mut self) {
+        if self.timer.is_running() && self.timer.is_finished() {
+            // Phase completed - ring terminal bell
+            print!("\x07");
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+
+            if self.timer.phase == crate::timer::TimerPhase::Work {
+                // Save the completed work session
+                self.complete_session();
+            }
+            self.timer.advance_phase();
+
+            // Auto-start the next phase
+            self.timer.start();
+        }
+    }
+
+    /// Start the timer
+    fn start_timer(&mut self) {
+        self.session_start_time = Some(Local::now().timestamp());
+        self.timer.start();
+    }
+
+    /// Create a new session from input
+    fn create_session(&mut self) {
+        let category = self.categories[self.selected_category].name.clone();
+        let description = if self.input_description.is_empty() {
+            None
+        } else {
+            Some(self.input_description.clone())
+        };
+
+        self.current_session = Some(Session {
+            id: None,
+            name: self.input_name.clone(),
+            description,
+            category,
+            started_at: 0,
+            ended_at: 0,
+            duration_secs: 0,
+        });
+    }
+
+    /// Complete the current session and save to database
+    fn complete_session(&mut self) {
+        if let (Some(session), Some(start_time)) =
+            (&mut self.current_session, self.session_start_time)
+        {
+            let end_time = Local::now().timestamp();
+            session.started_at = start_time;
+            session.ended_at = end_time;
+            session.duration_secs = end_time - start_time;
+
+            if let Some(ref db) = self.db {
+                let _ = db::save_session(&db.conn, session);
+            }
+
+            self.session_start_time = None;
+        }
+    }
+
+    /// Refresh data from database
+    fn refresh_data(&mut self) {
+        if let Some(ref db) = self.db {
+            // Load sessions for history (last 30 days)
+            let now = Local::now().timestamp();
+            let thirty_days_ago = now - (30 * 24 * 60 * 60);
+            if let Ok(sessions) = db::get_sessions_in_range(&db.conn, thirty_days_ago, now) {
+                self.sessions = sessions;
+            }
+
+            // Load category stats for current period
+            let (start, end) = self.stats_period.time_range();
+            if let Ok(stats) = db::get_time_by_category(&db.conn, start, end) {
+                self.category_stats = stats;
+            }
+        }
+    }
+
+    /// Quit the application
+    fn quit(&mut self) {
+        self.running = false;
+    }
+}
