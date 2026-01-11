@@ -8,7 +8,7 @@ edition = "2024"
 
 [dependencies]
 crossterm = "0.28.1"
-ratatui = "0.29.0"
+ratatui = "0.30.0"
 color-eyre = "0.6.3"
 rusqlite = { version = "0.32", features = ["bundled"] }
 directories = "5.0"
