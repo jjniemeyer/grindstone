@@ -108,6 +108,15 @@ pub enum SettingsField {
     SessionsUntilLong,
 }
 
+/// The current modal state - only one modal can be open at a time
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ModalState {
+    #[default]
+    None,
+    Input,
+    Settings,
+}
+
 impl SettingsField {
     pub fn next(&self) -> Self {
         match self {
@@ -132,8 +141,7 @@ impl SettingsField {
 pub struct App {
     pub running: bool,
     pub view: View,
-    pub show_input_modal: bool,
-    pub show_settings_modal: bool,
+    pub modal: ModalState,
     pub timer: PomodoroTimer,
     pub current_session: Option<Session>,
     pub session_start_time: Option<i64>,
@@ -168,8 +176,7 @@ impl Default for App {
         Self {
             running: false,
             view: View::Timer,
-            show_input_modal: false,
-            show_settings_modal: false,
+            modal: ModalState::None,
             timer: PomodoroTimer::new(),
             current_session: None,
             session_start_time: None,
@@ -252,25 +259,27 @@ impl App {
             View::Stats => render_stats(frame, area, self),
         }
 
-        // Render modals on top if visible
-        if self.show_input_modal {
-            render_input_modal(frame, area, self);
-        }
-        if self.show_settings_modal {
-            render_settings_modal(frame, area, self);
+        // Render modal on top if visible
+        match self.modal {
+            ModalState::None => {}
+            ModalState::Input => render_input_modal(frame, area, self),
+            ModalState::Settings => render_settings_modal(frame, area, self),
         }
     }
 
     /// Handle a key event
     fn handle_key_event(&mut self, key: KeyEvent) {
         // Handle modal input first
-        if self.show_settings_modal {
-            self.handle_settings_modal_key(key);
-            return;
-        }
-        if self.show_input_modal {
-            self.handle_input_modal_key(key);
-            return;
+        match self.modal {
+            ModalState::Settings => {
+                self.handle_settings_modal_key(key);
+                return;
+            }
+            ModalState::Input => {
+                self.handle_input_modal_key(key);
+                return;
+            }
+            ModalState::None => {}
         }
 
         // Global keys
@@ -318,14 +327,14 @@ impl App {
                 self.timer.reset();
             }
             KeyCode::Char('n') => {
-                self.show_input_modal = true;
+                self.modal = ModalState::Input;
                 self.input_field = InputField::Name;
                 self.input_name.clear();
                 self.input_description.clear();
                 self.selected_category = 0;
             }
             KeyCode::Char('c') => {
-                self.show_settings_modal = true;
+                self.modal = ModalState::Settings;
                 self.settings_field = SettingsField::WorkDuration;
                 self.editing_config = self.config.clone();
                 self.settings_editing_value = self.get_editing_field_value();
@@ -388,7 +397,7 @@ impl App {
     fn handle_input_modal_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc => {
-                self.show_input_modal = false;
+                self.modal = ModalState::None;
             }
             KeyCode::Tab => {
                 self.input_field = self.input_field.next();
@@ -396,7 +405,7 @@ impl App {
             KeyCode::Enter => {
                 if !self.input_name.is_empty() {
                     self.create_session();
-                    self.show_input_modal = false;
+                    self.modal = ModalState::None;
                     self.start_timer();
                 }
             }
@@ -440,7 +449,7 @@ impl App {
     fn handle_settings_modal_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc => {
-                self.show_settings_modal = false;
+                self.modal = ModalState::None;
             }
             KeyCode::Tab | KeyCode::Down => {
                 self.apply_editing_value();
@@ -454,7 +463,7 @@ impl App {
             }
             KeyCode::Enter => {
                 self.save_settings();
-                self.show_settings_modal = false;
+                self.modal = ModalState::None;
             }
             KeyCode::Backspace => {
                 self.settings_editing_value.pop();
@@ -667,7 +676,7 @@ mod tests {
         app.apply_editing_value();
 
         // Cancel (just close modal without saving)
-        app.show_settings_modal = false;
+        app.modal = ModalState::None;
 
         // Config should be unchanged
         assert_eq!(app.config.work_duration_secs, 25 * 60);
