@@ -11,7 +11,7 @@ crossterm = "0.28.1"
 ratatui = "0.29.0"
 color-eyre = "0.6.3"
 rusqlite = { version = "0.32", features = ["bundled"] }
-directories = "5.0"
+directories = "6.0"
 chrono = "0.4"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
