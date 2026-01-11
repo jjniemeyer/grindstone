@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use crate::config::{
     DEFAULT_LONG_BREAK, DEFAULT_SHORT_BREAK, DEFAULT_WORK_DURATION, SESSIONS_UNTIL_LONG_BREAK,
 };
+use crate::models::Config;
 
 /// The current phase of the pomodoro cycle
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -179,6 +180,14 @@ impl PomodoroTimer {
             self.phase = TimerPhase::Work;
             self.state = TimerState::Idle;
         }
+    }
+
+    /// Apply configuration settings to the timer
+    pub fn apply_config(&mut self, config: &Config) {
+        self.work_duration = Duration::from_secs(config.work_duration_secs as u64);
+        self.short_break = Duration::from_secs(config.short_break_secs as u64);
+        self.long_break = Duration::from_secs(config.long_break_secs as u64);
+        self.sessions_until_long = config.sessions_until_long_break as u8;
     }
 
     /// Get the progress as a ratio (0.0 to 1.0)
