@@ -1,10 +1,10 @@
 use chrono::{Datelike, Local};
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
-    Frame,
 };
 
 use crate::app::App;
@@ -97,7 +97,9 @@ fn build_history_items(sessions: &[crate::models::Session]) -> Vec<ListItem<'sta
     }
 
     if items.is_empty() {
-        items.push(ListItem::new(Line::from("No sessions yet. Start a pomodoro!").centered()));
+        items.push(ListItem::new(
+            Line::from("No sessions yet. Start a pomodoro!").centered(),
+        ));
     }
 
     items

@@ -1,10 +1,10 @@
 use chrono::{Datelike, Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{widgets::ListState, DefaultTerminal, Frame};
+use ratatui::{DefaultTerminal, Frame, widgets::ListState};
 
 use crate::config::TICK_RATE;
 use crate::db::{self, Database};
-use crate::event::{poll_event, AppEvent};
+use crate::event::{AppEvent, poll_event};
 use crate::models::{Category, Session};
 use crate::timer::PomodoroTimer;
 use crate::ui::{render_history, render_input_modal, render_stats, render_timer};
@@ -156,10 +156,10 @@ impl App {
         match Database::open() {
             Ok(database) => {
                 // Load categories
-                if let Ok(cats) = db::get_categories(&database.conn) {
-                    if !cats.is_empty() {
-                        app.categories = cats;
-                    }
+                if let Ok(cats) = db::get_categories(&database.conn)
+                    && !cats.is_empty()
+                {
+                    app.categories = cats;
                 }
                 app.db = Some(database);
                 app.refresh_data();
@@ -247,10 +247,8 @@ impl App {
                     self.timer.skip_break();
                 } else if self.timer.is_paused() {
                     self.timer.start();
-                } else if self.timer.is_idle() {
-                    if self.current_session.is_some() {
-                        self.start_timer();
-                    }
+                } else if self.timer.is_idle() && self.current_session.is_some() {
+                    self.start_timer();
                 }
             }
             KeyCode::Char('p') => {
@@ -294,15 +292,13 @@ impl App {
             }
             KeyCode::Char('d') => {
                 // Delete selected session
-                if let Some(idx) = self.history_state.selected() {
-                    if idx < self.sessions.len() {
-                        if let Some(id) = self.sessions[idx].id {
-                            if let Some(ref db) = self.db {
-                                let _ = db::queries::delete_session(&db.conn, id);
-                                self.refresh_data();
-                            }
-                        }
-                    }
+                if let Some(idx) = self.history_state.selected()
+                    && idx < self.sessions.len()
+                    && let Some(id) = self.sessions[idx].id
+                    && let Some(ref db) = self.db
+                {
+                    let _ = db::queries::delete_session(&db.conn, id);
+                    self.refresh_data();
                 }
             }
             _ => {}

@@ -13,26 +13,6 @@ pub struct Session {
 }
 
 impl Session {
-    /// Create a new session
-    pub fn new(
-        name: String,
-        description: Option<String>,
-        category: String,
-        started_at: i64,
-        ended_at: i64,
-    ) -> Self {
-        let duration_secs = ended_at - started_at;
-        Self {
-            id: None,
-            name,
-            description,
-            category,
-            started_at,
-            ended_at,
-            duration_secs,
-        }
-    }
-
     /// Get the start time as a DateTime
     pub fn start_datetime(&self) -> DateTime<Local> {
         DateTime::from_timestamp(self.started_at, 0)
@@ -64,6 +44,7 @@ impl Session {
 /// A category for sessions with an associated color
 #[derive(Debug, Clone)]
 pub struct Category {
+    #[allow(dead_code)]
     pub id: Option<i64>,
     pub name: String,
     pub color: String, // Hex color like "#FF6B6B"
@@ -104,18 +85,5 @@ impl Category {
                 color: "#DFE6E9".to_string(),
             },
         ]
-    }
-
-    /// Parse hex color to RGB values
-    pub fn to_rgb(&self) -> (u8, u8, u8) {
-        let hex = self.color.trim_start_matches('#');
-        if hex.len() != 6 {
-            return (128, 128, 128); // Default gray
-        }
-
-        let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(128);
-        let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(128);
-        let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(128);
-        (r, g, b)
     }
 }

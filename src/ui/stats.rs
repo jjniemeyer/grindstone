@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span},
     widgets::{Bar, BarChart, BarGroup, Block, Borders, Paragraph},
-    Frame,
 };
 
 use crate::app::{App, StatsPeriod};
@@ -98,7 +98,9 @@ pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
 fn render_bar_chart(frame: &mut Frame, area: Rect, stats: &[(String, i64)]) {
     if stats.is_empty() {
         frame.render_widget(
-            Paragraph::new("No data for this period").centered().dark_gray(),
+            Paragraph::new("No data for this period")
+                .centered()
+                .dark_gray(),
             area,
         );
         return;
@@ -135,7 +137,11 @@ fn render_bar_chart(frame: &mut Frame, area: Rect, stats: &[(String, i64)]) {
         .collect();
 
     let chart = BarChart::default()
-        .block(Block::default().borders(Borders::ALL).title("Time by Category"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Time by Category"),
+        )
         .bar_width(3)
         .bar_gap(1)
         .data(BarGroup::default().bars(&bars))

@@ -3,15 +3,15 @@ name = "grindstone"
 version = "0.1.0"
 description = "A pomodoro timer with session tracking and statistics"
 authors = ["pants"]
-license = "MIT"
+license = "wtfpl"
 edition = "2024"
 
 [dependencies]
-crossterm = "0.28.1"
-ratatui = "0.29.0"
+crossterm = "0.29.0"
+ratatui = "0.30.0"
 color-eyre = "0.6.3"
-rusqlite = { version = "0.32", features = ["bundled"] }
-directories = "5.0"
+rusqlite = { version = "0.38", features = ["bundled"] }
+directories = "6.0.0"
 chrono = "0.4"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations

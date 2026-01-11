@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 use crate::models::{Category, Session};
 
@@ -94,13 +94,15 @@ mod tests {
     #[test]
     fn test_save_and_load_session() {
         let db = Database::open_in_memory().unwrap();
-        let session = Session::new(
-            "Test session".to_string(),
-            Some("Description".to_string()),
-            "coding".to_string(),
-            1000,
-            2500,
-        );
+        let session = Session {
+            id: None,
+            name: "Test session".to_string(),
+            description: Some("Description".to_string()),
+            category: "coding".to_string(),
+            started_at: 1000,
+            ended_at: 2500,
+            duration_secs: 1500,
+        };
 
         let id = save_session(&db.conn, &session).unwrap();
         assert!(id > 0);
@@ -115,9 +117,33 @@ mod tests {
     fn test_time_by_category() {
         let db = Database::open_in_memory().unwrap();
 
-        let s1 = Session::new("Work 1".to_string(), None, "coding".to_string(), 1000, 2000);
-        let s2 = Session::new("Work 2".to_string(), None, "coding".to_string(), 2000, 3000);
-        let s3 = Session::new("Meeting".to_string(), None, "work".to_string(), 3000, 4000);
+        let s1 = Session {
+            id: None,
+            name: "Work 1".to_string(),
+            description: None,
+            category: "coding".to_string(),
+            started_at: 1000,
+            ended_at: 2000,
+            duration_secs: 1000,
+        };
+        let s2 = Session {
+            id: None,
+            name: "Work 2".to_string(),
+            description: None,
+            category: "coding".to_string(),
+            started_at: 2000,
+            ended_at: 3000,
+            duration_secs: 1000,
+        };
+        let s3 = Session {
+            id: None,
+            name: "Meeting".to_string(),
+            description: None,
+            category: "work".to_string(),
+            started_at: 3000,
+            ended_at: 4000,
+            duration_secs: 1000,
+        };
 
         save_session(&db.conn, &s1).unwrap();
         save_session(&db.conn, &s2).unwrap();
