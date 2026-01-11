@@ -1,5 +1,9 @@
 use chrono::{DateTime, Local};
 
+use crate::config::{
+    DEFAULT_LONG_BREAK, DEFAULT_SHORT_BREAK, DEFAULT_WORK_DURATION, SESSIONS_UNTIL_LONG_BREAK,
+};
+
 /// A completed pomodoro session
 #[derive(Debug, Clone)]
 pub struct Session {
@@ -85,5 +89,25 @@ impl Category {
                 color: "#DFE6E9".to_string(),
             },
         ]
+    }
+}
+
+/// Timer configuration settings
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub work_duration_secs: i64,
+    pub short_break_secs: i64,
+    pub long_break_secs: i64,
+    pub sessions_until_long_break: i64,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            work_duration_secs: DEFAULT_WORK_DURATION.as_secs() as i64,
+            short_break_secs: DEFAULT_SHORT_BREAK.as_secs() as i64,
+            long_break_secs: DEFAULT_LONG_BREAK.as_secs() as i64,
+            sessions_until_long_break: SESSIONS_UNTIL_LONG_BREAK as i64,
+        }
     }
 }

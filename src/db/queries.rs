@@ -1,6 +1,6 @@
 use rusqlite::{Connection, params};
 
-use crate::models::{Category, Session};
+use crate::models::{Category, Config, Session};
 
 /// Save a session to the database
 pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<i64> {
@@ -86,6 +86,46 @@ pub fn delete_session(conn: &Connection, id: i64) -> rusqlite::Result<usize> {
     conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])
 }
 
+/// Get timer configuration from database
+pub fn get_config(conn: &Connection) -> rusqlite::Result<Config> {
+    let mut config = Config::default();
+
+    let mut stmt = conn.prepare("SELECT key, value FROM config")?;
+    let rows = stmt.query_map([], |row| {
+        let key: String = row.get(0)?;
+        let value: i64 = row.get(1)?;
+        Ok((key, value))
+    })?;
+
+    for row in rows {
+        let (key, value) = row?;
+        match key.as_str() {
+            "work_duration_secs" => config.work_duration_secs = value,
+            "short_break_secs" => config.short_break_secs = value,
+            "long_break_secs" => config.long_break_secs = value,
+            "sessions_until_long_break" => config.sessions_until_long_break = value,
+            _ => {}
+        }
+    }
+
+    Ok(config)
+}
+
+/// Save timer configuration to database
+pub fn save_config(conn: &Connection, config: &Config) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare("INSERT OR REPLACE INTO config (key, value) VALUES (?1, ?2)")?;
+
+    stmt.execute(params!["work_duration_secs", config.work_duration_secs])?;
+    stmt.execute(params!["short_break_secs", config.short_break_secs])?;
+    stmt.execute(params!["long_break_secs", config.long_break_secs])?;
+    stmt.execute(params![
+        "sessions_until_long_break",
+        config.sessions_until_long_break
+    ])?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,5 +202,24 @@ mod tests {
         let categories = get_categories(&db.conn).unwrap();
         assert!(!categories.is_empty());
         assert!(categories.iter().any(|c| c.name == "coding"));
+    }
+
+    #[test]
+    fn test_config_save_and_load() {
+        let db = Database::open_in_memory().unwrap();
+
+        // Default config should be seeded
+        let config = get_config(&db.conn).unwrap();
+        assert_eq!(config.work_duration_secs, 25 * 60);
+        assert_eq!(config.short_break_secs, 5 * 60);
+
+        // Modify and save
+        let mut new_config = config;
+        new_config.work_duration_secs = 30 * 60;
+        save_config(&db.conn, &new_config).unwrap();
+
+        // Reload and verify
+        let loaded = get_config(&db.conn).unwrap();
+        assert_eq!(loaded.work_duration_secs, 30 * 60);
     }
 }
