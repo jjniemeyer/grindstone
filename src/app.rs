@@ -396,7 +396,9 @@ impl App {
                     && let Some(id) = self.sessions[idx].id
                     && let Some(ref db) = self.db
                 {
-                    let _ = db::queries::delete_session(&db.conn, id);
+                    if let Err(e) = db::queries::delete_session(&db.conn, id) {
+                        eprintln!("Failed to delete session: {}", e);
+                    }
                     self.refresh_data();
                 }
             }
@@ -549,8 +551,10 @@ impl App {
         self.timer.apply_config(&self.config);
 
         // Save to database
-        if let Some(ref db) = self.db {
-            let _ = db::save_config(&db.conn, &self.config);
+        if let Some(ref db) = self.db
+            && let Err(e) = db::save_config(&db.conn, &self.config)
+        {
+            eprintln!("Failed to save config: {}", e);
         }
     }
 
@@ -627,8 +631,10 @@ impl App {
                 session.ended_at = end_time;
                 session.duration_secs = end_time - start_time;
 
-                if let Some(ref db) = self.db {
-                    let _ = db::save_session(&db.conn, &session);
+                if let Some(ref db) = self.db
+                    && let Err(e) = db::save_session(&db.conn, &session)
+                {
+                    eprintln!("Failed to save session: {}", e);
                 }
 
                 SessionPhase::Ready(session)
