@@ -5,7 +5,7 @@ use ratatui::{DefaultTerminal, Frame, widgets::ListState};
 use crate::config::TICK_RATE;
 use crate::db::{self, Database};
 use crate::event::{AppEvent, poll_event};
-use crate::models::{Category, Config, Session};
+use crate::models::{Category, Config, DurationSecs, Session, Timestamp};
 use crate::timer::PomodoroTimer;
 use crate::ui::{
     render_history, render_input_modal, render_settings_modal, render_stats, render_timer,
@@ -126,7 +126,10 @@ pub enum SessionPhase {
     /// Session created but not currently in a work period
     Ready(Session),
     /// Session in active work period
-    Active { session: Session, start_time: i64 },
+    Active {
+        session: Session,
+        start_time: Timestamp,
+    },
 }
 
 impl SettingsField {
@@ -576,11 +579,11 @@ impl App {
         self.session_phase = match phase {
             SessionPhase::Ready(session) => SessionPhase::Active {
                 session,
-                start_time: Local::now().timestamp(),
+                start_time: Timestamp::now(),
             },
             SessionPhase::Active { session, .. } => SessionPhase::Active {
                 session,
-                start_time: Local::now().timestamp(),
+                start_time: Timestamp::now(),
             },
             SessionPhase::Inactive => SessionPhase::Inactive,
         };
@@ -602,9 +605,9 @@ impl App {
             name: self.input_name.clone(),
             description,
             category,
-            started_at: 0,
-            ended_at: 0,
-            duration_secs: 0,
+            started_at: Timestamp(0),
+            ended_at: Timestamp(0),
+            duration_secs: DurationSecs(0),
         };
 
         self.session_phase = SessionPhase::Ready(session);
@@ -619,7 +622,7 @@ impl App {
                 mut session,
                 start_time,
             } => {
-                let end_time = Local::now().timestamp();
+                let end_time = Timestamp::now();
                 session.started_at = start_time;
                 session.ended_at = end_time;
                 session.duration_secs = end_time - start_time;

@@ -1,3 +1,3 @@
 mod session;
 
-pub use session::{Category, Config, Session};
+pub use session::{Category, Config, DurationSecs, Session, Timestamp};

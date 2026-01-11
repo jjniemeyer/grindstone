@@ -1,6 +1,6 @@
 use rusqlite::{Connection, params};
 
-use crate::models::{Category, Config, Session};
+use crate::models::{Category, Config, DurationSecs, Session, Timestamp};
 
 /// Save a session to the database
 pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<i64> {
@@ -11,9 +11,9 @@ pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<i6
             session.name,
             session.description,
             session.category,
-            session.started_at,
-            session.ended_at,
-            session.duration_secs,
+            session.started_at.0,
+            session.ended_at.0,
+            session.duration_secs.0,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -38,9 +38,9 @@ pub fn get_sessions_in_range(
             name: row.get(1)?,
             description: row.get(2)?,
             category: row.get(3)?,
-            started_at: row.get(4)?,
-            ended_at: row.get(5)?,
-            duration_secs: row.get(6)?,
+            started_at: Timestamp(row.get(4)?),
+            ended_at: Timestamp(row.get(5)?),
+            duration_secs: DurationSecs(row.get(6)?),
         })
     })?;
 
@@ -139,9 +139,9 @@ mod tests {
             name: "Test session".to_string(),
             description: Some("Description".to_string()),
             category: "coding".to_string(),
-            started_at: 1000,
-            ended_at: 2500,
-            duration_secs: 1500,
+            started_at: Timestamp(1000),
+            ended_at: Timestamp(2500),
+            duration_secs: DurationSecs(1500),
         };
 
         let id = save_session(&db.conn, &session).unwrap();
@@ -150,7 +150,7 @@ mod tests {
         let sessions = get_sessions_in_range(&db.conn, 0, 3000).unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].name, "Test session");
-        assert_eq!(sessions[0].duration_secs, 1500);
+        assert_eq!(sessions[0].duration_secs, DurationSecs(1500));
     }
 
     #[test]
@@ -162,27 +162,27 @@ mod tests {
             name: "Work 1".to_string(),
             description: None,
             category: "coding".to_string(),
-            started_at: 1000,
-            ended_at: 2000,
-            duration_secs: 1000,
+            started_at: Timestamp(1000),
+            ended_at: Timestamp(2000),
+            duration_secs: DurationSecs(1000),
         };
         let s2 = Session {
             id: None,
             name: "Work 2".to_string(),
             description: None,
             category: "coding".to_string(),
-            started_at: 2000,
-            ended_at: 3000,
-            duration_secs: 1000,
+            started_at: Timestamp(2000),
+            ended_at: Timestamp(3000),
+            duration_secs: DurationSecs(1000),
         };
         let s3 = Session {
             id: None,
             name: "Meeting".to_string(),
             description: None,
             category: "work".to_string(),
-            started_at: 3000,
-            ended_at: 4000,
-            duration_secs: 1000,
+            started_at: Timestamp(3000),
+            ended_at: Timestamp(4000),
+            duration_secs: DurationSecs(1000),
         };
 
         save_session(&db.conn, &s1).unwrap();

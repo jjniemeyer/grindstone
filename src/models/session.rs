@@ -1,5 +1,39 @@
 use chrono::{DateTime, Local};
 
+/// Unix timestamp in seconds
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct Timestamp(pub i64);
+
+impl Timestamp {
+    pub fn now() -> Self {
+        Timestamp(Local::now().timestamp())
+    }
+}
+
+impl From<i64> for Timestamp {
+    fn from(val: i64) -> Self {
+        Timestamp(val)
+    }
+}
+
+impl std::ops::Sub for Timestamp {
+    type Output = DurationSecs;
+
+    fn sub(self, other: Self) -> DurationSecs {
+        DurationSecs(self.0 - other.0)
+    }
+}
+
+/// Duration in seconds
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct DurationSecs(pub i64);
+
+impl From<i64> for DurationSecs {
+    fn from(val: i64) -> Self {
+        DurationSecs(val)
+    }
+}
+
 /// A completed pomodoro session
 #[derive(Debug, Clone)]
 pub struct Session {
@@ -7,29 +41,29 @@ pub struct Session {
     pub name: String,
     pub description: Option<String>,
     pub category: String,
-    pub started_at: i64, // Unix timestamp
-    pub ended_at: i64,   // Unix timestamp
-    pub duration_secs: i64,
+    pub started_at: Timestamp,
+    pub ended_at: Timestamp,
+    pub duration_secs: DurationSecs,
 }
 
 impl Session {
     /// Get the start time as a DateTime
     pub fn start_datetime(&self) -> DateTime<Local> {
-        DateTime::from_timestamp(self.started_at, 0)
+        DateTime::from_timestamp(self.started_at.0, 0)
             .map(|dt| dt.with_timezone(&Local))
             .unwrap_or_else(Local::now)
     }
 
     /// Get the end time as a DateTime
     pub fn end_datetime(&self) -> DateTime<Local> {
-        DateTime::from_timestamp(self.ended_at, 0)
+        DateTime::from_timestamp(self.ended_at.0, 0)
             .map(|dt| dt.with_timezone(&Local))
             .unwrap_or_else(Local::now)
     }
 
     /// Format duration as "Xh Ym" or "Xm"
     pub fn format_duration(&self) -> String {
-        let minutes = self.duration_secs / 60;
+        let minutes = self.duration_secs.0 / 60;
         let hours = minutes / 60;
         let remaining_minutes = minutes % 60;
 
