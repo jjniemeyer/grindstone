@@ -1,9 +1,6 @@
 use rusqlite::Connection;
 
-use crate::config::{
-    DEFAULT_LONG_BREAK, DEFAULT_SHORT_BREAK, DEFAULT_WORK_DURATION, SESSIONS_UNTIL_LONG_BREAK,
-};
-use crate::models::Category;
+use crate::models::{Category, Config};
 
 /// Initialize the database schema
 pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -51,19 +48,14 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
     let config_count: i64 = conn.query_row("SELECT COUNT(*) FROM config", [], |row| row.get(0))?;
 
     if config_count == 0 {
+        let defaults = Config::default();
         let mut stmt = conn.prepare("INSERT INTO config (key, value) VALUES (?1, ?2)")?;
-        stmt.execute([
-            "work_duration_secs",
-            &DEFAULT_WORK_DURATION.as_secs().to_string(),
-        ])?;
-        stmt.execute([
-            "short_break_secs",
-            &DEFAULT_SHORT_BREAK.as_secs().to_string(),
-        ])?;
-        stmt.execute(["long_break_secs", &DEFAULT_LONG_BREAK.as_secs().to_string()])?;
+        stmt.execute(["work_duration_secs", &defaults.work_duration_secs.to_string()])?;
+        stmt.execute(["short_break_secs", &defaults.short_break_secs.to_string()])?;
+        stmt.execute(["long_break_secs", &defaults.long_break_secs.to_string()])?;
         stmt.execute([
             "sessions_until_long_break",
-            &SESSIONS_UNTIL_LONG_BREAK.to_string(),
+            &defaults.sessions_until_long_break.to_string(),
         ])?;
     }
 
