@@ -5,9 +5,11 @@ use ratatui::{DefaultTerminal, Frame, widgets::ListState};
 use crate::config::TICK_RATE;
 use crate::db::{self, Database};
 use crate::event::{AppEvent, poll_event};
-use crate::models::{Category, Session};
+use crate::models::{Category, Config, Session};
 use crate::timer::PomodoroTimer;
-use crate::ui::{render_history, render_input_modal, render_stats, render_timer};
+use crate::ui::{
+    render_history, render_input_modal, render_settings_modal, render_stats, render_timer,
+};
 
 /// The current view/screen
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -96,11 +98,42 @@ impl InputField {
     }
 }
 
+/// Which field is focused in the settings modal
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SettingsField {
+    #[default]
+    WorkDuration,
+    ShortBreak,
+    LongBreak,
+    SessionsUntilLong,
+}
+
+impl SettingsField {
+    pub fn next(&self) -> Self {
+        match self {
+            SettingsField::WorkDuration => SettingsField::ShortBreak,
+            SettingsField::ShortBreak => SettingsField::LongBreak,
+            SettingsField::LongBreak => SettingsField::SessionsUntilLong,
+            SettingsField::SessionsUntilLong => SettingsField::WorkDuration,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            SettingsField::WorkDuration => SettingsField::SessionsUntilLong,
+            SettingsField::ShortBreak => SettingsField::WorkDuration,
+            SettingsField::LongBreak => SettingsField::ShortBreak,
+            SettingsField::SessionsUntilLong => SettingsField::LongBreak,
+        }
+    }
+}
+
 /// The main application state
 pub struct App {
     pub running: bool,
     pub view: View,
     pub show_input_modal: bool,
+    pub show_settings_modal: bool,
     pub timer: PomodoroTimer,
     pub current_session: Option<Session>,
     pub session_start_time: Option<i64>,
@@ -111,6 +144,11 @@ pub struct App {
     pub input_description: String,
     pub selected_category: usize,
     pub categories: Vec<Category>,
+
+    // Settings modal state
+    pub settings_field: SettingsField,
+    pub settings_editing_value: String,
+    pub config: Config,
 
     // History view state
     pub sessions: Vec<Session>,
@@ -130,6 +168,7 @@ impl Default for App {
             running: false,
             view: View::Timer,
             show_input_modal: false,
+            show_settings_modal: false,
             timer: PomodoroTimer::new(),
             current_session: None,
             session_start_time: None,
@@ -138,6 +177,9 @@ impl Default for App {
             input_description: String::new(),
             selected_category: 0,
             categories: Category::defaults(),
+            settings_field: SettingsField::WorkDuration,
+            settings_editing_value: String::new(),
+            config: Config::default(),
             sessions: Vec::new(),
             history_state: ListState::default(),
             stats_period: StatsPeriod::Day,
@@ -161,6 +203,13 @@ impl App {
                 {
                     app.categories = cats;
                 }
+
+                // Load config and apply to timer
+                if let Ok(config) = db::get_config(&database.conn) {
+                    app.timer.apply_config(&config);
+                    app.config = config;
+                }
+
                 app.db = Some(database);
                 app.refresh_data();
             }
@@ -201,15 +250,22 @@ impl App {
             View::Stats => render_stats(frame, area, self),
         }
 
-        // Render input modal on top if visible
+        // Render modals on top if visible
         if self.show_input_modal {
             render_input_modal(frame, area, self);
+        }
+        if self.show_settings_modal {
+            render_settings_modal(frame, area, self);
         }
     }
 
     /// Handle a key event
     fn handle_key_event(&mut self, key: KeyEvent) {
         // Handle modal input first
+        if self.show_settings_modal {
+            self.handle_settings_modal_key(key);
+            return;
+        }
         if self.show_input_modal {
             self.handle_input_modal_key(key);
             return;
@@ -265,6 +321,11 @@ impl App {
                 self.input_name.clear();
                 self.input_description.clear();
                 self.selected_category = 0;
+            }
+            KeyCode::Char('c') => {
+                self.show_settings_modal = true;
+                self.settings_field = SettingsField::WorkDuration;
+                self.settings_editing_value = self.get_settings_field_value();
             }
             _ => {}
         }
@@ -369,6 +430,75 @@ impl App {
                 InputField::Category => {}
             },
             _ => {}
+        }
+    }
+
+    /// Handle settings modal keys
+    fn handle_settings_modal_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.show_settings_modal = false;
+            }
+            KeyCode::Tab | KeyCode::Down => {
+                self.settings_field = self.settings_field.next();
+                self.settings_editing_value = self.get_settings_field_value();
+            }
+            KeyCode::Up => {
+                self.settings_field = self.settings_field.prev();
+                self.settings_editing_value = self.get_settings_field_value();
+            }
+            KeyCode::Enter => {
+                self.save_settings();
+                self.show_settings_modal = false;
+            }
+            KeyCode::Backspace => {
+                self.settings_editing_value.pop();
+            }
+            KeyCode::Char(c) if c.is_ascii_digit() => {
+                self.settings_editing_value.push(c);
+            }
+            _ => {}
+        }
+    }
+
+    /// Get the current value for the selected settings field (as display string)
+    fn get_settings_field_value(&self) -> String {
+        match self.settings_field {
+            SettingsField::WorkDuration => (self.config.work_duration_secs / 60).to_string(),
+            SettingsField::ShortBreak => (self.config.short_break_secs / 60).to_string(),
+            SettingsField::LongBreak => (self.config.long_break_secs / 60).to_string(),
+            SettingsField::SessionsUntilLong => self.config.sessions_until_long_break.to_string(),
+        }
+    }
+
+    /// Save the current settings to the database and apply to timer
+    fn save_settings(&mut self) {
+        // Parse the editing value and update config
+        if let Ok(value) = self.settings_editing_value.parse::<i64>()
+            && value > 0
+        {
+            match self.settings_field {
+                SettingsField::WorkDuration => {
+                    self.config.work_duration_secs = value * 60;
+                }
+                SettingsField::ShortBreak => {
+                    self.config.short_break_secs = value * 60;
+                }
+                SettingsField::LongBreak => {
+                    self.config.long_break_secs = value * 60;
+                }
+                SettingsField::SessionsUntilLong => {
+                    self.config.sessions_until_long_break = value;
+                }
+            }
+        }
+
+        // Apply to timer
+        self.timer.apply_config(&self.config);
+
+        // Save to database
+        if let Some(ref db) = self.db {
+            let _ = db::save_config(&db.conn, &self.config);
         }
     }
 
