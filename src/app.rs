@@ -602,3 +602,72 @@ impl App {
         self.running = false;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_settings_editing_buffer_isolation() {
+        let mut app = App::default();
+        app.config.work_duration_secs = 25 * 60;
+
+        // Simulate opening settings modal
+        app.editing_config = app.config.clone();
+        app.settings_field = SettingsField::WorkDuration;
+        app.settings_editing_value = "30".to_string();
+
+        // Apply the editing value (simulates navigation)
+        app.apply_editing_value();
+
+        // editing_config should be updated, config should not
+        assert_eq!(app.editing_config.work_duration_secs, 30 * 60);
+        assert_eq!(app.config.work_duration_secs, 25 * 60);
+    }
+
+    #[test]
+    fn test_settings_save_commits_all_changes() {
+        let mut app = App::default();
+        app.config.work_duration_secs = 25 * 60;
+        app.config.short_break_secs = 5 * 60;
+
+        // Simulate editing multiple fields
+        app.editing_config = app.config.clone();
+
+        // Edit work duration
+        app.settings_field = SettingsField::WorkDuration;
+        app.settings_editing_value = "30".to_string();
+        app.apply_editing_value();
+
+        // Navigate to short break and edit it
+        app.settings_field = SettingsField::ShortBreak;
+        app.settings_editing_value = "10".to_string();
+        app.apply_editing_value();
+
+        // Save should commit both changes
+        app.settings_field = SettingsField::ShortBreak;
+        app.settings_editing_value = "10".to_string();
+        app.save_settings();
+
+        assert_eq!(app.config.work_duration_secs, 30 * 60);
+        assert_eq!(app.config.short_break_secs, 10 * 60);
+    }
+
+    #[test]
+    fn test_settings_cancel_discards_changes() {
+        let mut app = App::default();
+        app.config.work_duration_secs = 25 * 60;
+
+        // Simulate editing
+        app.editing_config = app.config.clone();
+        app.settings_field = SettingsField::WorkDuration;
+        app.settings_editing_value = "30".to_string();
+        app.apply_editing_value();
+
+        // Cancel (just close modal without saving)
+        app.show_settings_modal = false;
+
+        // Config should be unchanged
+        assert_eq!(app.config.work_duration_secs, 25 * 60);
+    }
+}
