@@ -50,7 +50,10 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
     if config_count == 0 {
         let defaults = Config::default();
         let mut stmt = conn.prepare("INSERT INTO config (key, value) VALUES (?1, ?2)")?;
-        stmt.execute(["work_duration_secs", &defaults.work_duration_secs.to_string()])?;
+        stmt.execute([
+            "work_duration_secs",
+            &defaults.work_duration_secs.to_string(),
+        ])?;
         stmt.execute(["short_break_secs", &defaults.short_break_secs.to_string()])?;
         stmt.execute(["long_break_secs", &defaults.long_break_secs.to_string()])?;
         stmt.execute([

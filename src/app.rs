@@ -469,7 +469,9 @@ impl App {
     /// Get the current value for the selected settings field from editing_config
     fn get_editing_field_value(&self) -> String {
         match self.settings_field {
-            SettingsField::WorkDuration => (self.editing_config.work_duration_secs / 60).to_string(),
+            SettingsField::WorkDuration => {
+                (self.editing_config.work_duration_secs / 60).to_string()
+            }
             SettingsField::ShortBreak => (self.editing_config.short_break_secs / 60).to_string(),
             SettingsField::LongBreak => (self.editing_config.long_break_secs / 60).to_string(),
             SettingsField::SessionsUntilLong => {
