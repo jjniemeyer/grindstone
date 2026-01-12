@@ -782,4 +782,29 @@ mod tests {
         // Config should be unchanged
         assert_eq!(app.data.config.work_duration_secs, 25 * 60);
     }
+
+    #[test]
+    fn test_notification_set_and_clear() {
+        let mut app = App::default();
+
+        // Initially no notification
+        assert!(app.notification.is_none());
+
+        // Set a warning notification
+        app.notify(NotificationLevel::Warning, "Test warning");
+        assert!(app.notification.is_some());
+        let n = app.notification.as_ref().unwrap();
+        assert_eq!(n.message, "Test warning");
+        assert_eq!(n.level, NotificationLevel::Warning);
+
+        // Set an error notification (replaces previous)
+        app.notify(NotificationLevel::Error, "Test error");
+        let n = app.notification.as_ref().unwrap();
+        assert_eq!(n.message, "Test error");
+        assert_eq!(n.level, NotificationLevel::Error);
+
+        // Clear notification (simulates key press)
+        app.notification = None;
+        assert!(app.notification.is_none());
+    }
 }
