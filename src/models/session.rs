@@ -515,4 +515,35 @@ mod tests {
         let s: BoundedString<1> = BoundedString::from_string("é"); // Can't fit, truncates to empty
         assert_eq!(s.to_string(), "");
     }
+
+    #[test]
+    fn test_config_default_values() {
+        let config = Config::default();
+        assert_eq!(config.work_duration_secs, 25 * 60);
+        assert_eq!(config.short_break_secs, 5 * 60);
+        assert_eq!(config.long_break_secs, 15 * 60);
+        assert_eq!(config.sessions_until_long_break, 4);
+    }
+
+    #[test]
+    fn test_config_constants() {
+        assert_eq!(Config::DEFAULT_WORK_SECS, 1500);
+        assert_eq!(Config::DEFAULT_SHORT_BREAK_SECS, 300);
+        assert_eq!(Config::DEFAULT_LONG_BREAK_SECS, 900);
+        assert_eq!(Config::DEFAULT_SESSIONS_UNTIL_LONG, 4);
+    }
+
+    #[test]
+    fn test_config_custom_values() {
+        let config = Config {
+            work_duration_secs: 30 * 60,
+            short_break_secs: 10 * 60,
+            long_break_secs: 20 * 60,
+            sessions_until_long_break: 3,
+        };
+        assert_eq!(config.work_duration_secs, 1800);
+        assert_eq!(config.short_break_secs, 600);
+        assert_eq!(config.long_break_secs, 1200);
+        assert_eq!(config.sessions_until_long_break, 3);
+    }
 }
