@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 use crate::app::App;
+use crate::models::Category;
 use crate::ui;
 
 /// Render the history view
@@ -28,7 +29,7 @@ pub fn render_history(frame: &mut Frame, area: Rect, app: &mut App) {
     );
 
     // Session list grouped by day
-    let items: Vec<ListItem> = build_history_items(&app.data.sessions);
+    let items: Vec<ListItem> = build_history_items(&app.data.sessions, &app.data.categories);
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::NONE))
@@ -55,7 +56,19 @@ pub fn render_history(frame: &mut Frame, area: Rect, app: &mut App) {
     ui::render_footer(frame, chunks[3], app, "[Tab] Timer  [t] Stats  [q] Quit");
 }
 
-fn build_history_items(sessions: &[crate::models::Session]) -> Vec<ListItem<'static>> {
+/// Look up a category's color by name, with gray fallback
+fn get_category_color(categories: &[Category], name: &str) -> Color {
+    categories
+        .iter()
+        .find(|c| c.name == name)
+        .map(|c| c.color)
+        .unwrap_or(Color::Gray)
+}
+
+fn build_history_items(
+    sessions: &[crate::models::Session],
+    categories: &[Category],
+) -> Vec<ListItem<'static>> {
     let mut items = Vec::new();
     let mut current_date: Option<(i32, u32, u32)> = None;
     let today = Local::now().date_naive();
@@ -84,12 +97,13 @@ fn build_history_items(sessions: &[crate::models::Session]) -> Vec<ListItem<'sta
         let start_time = session.start_datetime().format("%H:%M");
         let end_time = session.end_datetime().format("%H:%M");
         let duration = session.format_duration();
+        let cat_color = get_category_color(categories, &session.category);
 
         let line = Line::from(vec![
             Span::styled("  ", Style::default()),
             Span::styled(session.name.clone(), Style::default().bold()),
             Span::raw("  "),
-            Span::styled(session.category.clone(), Style::default().fg(Color::Cyan)),
+            Span::styled(session.category.clone(), Style::default().fg(cat_color)),
             Span::raw("  "),
             Span::styled(duration, Style::default().fg(Color::Yellow)),
             Span::raw("  "),

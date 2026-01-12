@@ -6,13 +6,13 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
-use crate::app::{App, SettingsField};
+use crate::app::{App, CategoryField, SettingsField, SettingsMode};
 
 /// Render the settings modal as an overlay
 pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
     // Calculate modal size and position (centered)
-    let modal_width = 45.min(area.width.saturating_sub(4));
-    let modal_height = 14.min(area.height.saturating_sub(4));
+    let modal_width = 50.min(area.width.saturating_sub(4));
+    let modal_height = 18.min(area.height.saturating_sub(4));
     let modal_x = (area.width.saturating_sub(modal_width)) / 2;
     let modal_y = (area.height.saturating_sub(modal_height)) / 2;
 
@@ -31,14 +31,81 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(block, modal_area);
 
     let chunks = Layout::vertical([
+        Constraint::Length(2), // Mode tabs
+        Constraint::Min(1),    // Content area
+        Constraint::Length(2), // Controls
+    ])
+    .split(inner);
+
+    // Mode tabs
+    render_mode_tabs(frame, chunks[0], app);
+
+    // Content based on mode
+    match app.settings.mode {
+        SettingsMode::Timer => render_timer_settings(frame, chunks[1], app),
+        SettingsMode::Categories => render_category_settings(frame, chunks[1], app),
+    }
+
+    // Controls based on mode
+    let controls = match app.settings.mode {
+        SettingsMode::Timer => Line::from(vec![
+            Span::styled("[Enter]", Style::default().bold()),
+            Span::raw(" Save  "),
+            Span::styled("[Tab/↑↓]", Style::default().bold()),
+            Span::raw(" Navigate  "),
+            Span::styled("[1/2]", Style::default().bold()),
+            Span::raw(" Mode  "),
+            Span::styled("[Esc]", Style::default().bold()),
+            Span::raw(" Close"),
+        ]),
+        SettingsMode::Categories => Line::from(vec![
+            Span::styled("[n]", Style::default().bold()),
+            Span::raw(" New  "),
+            Span::styled("[e]", Style::default().bold()),
+            Span::raw(" Edit  "),
+            Span::styled("[d]", Style::default().bold()),
+            Span::raw(" Delete  "),
+            Span::styled("[j/k]", Style::default().bold()),
+            Span::raw(" Nav  "),
+            Span::styled("[1/2]", Style::default().bold()),
+            Span::raw(" Mode  "),
+            Span::styled("[Esc]", Style::default().bold()),
+            Span::raw(" Close"),
+        ]),
+    };
+    frame.render_widget(Paragraph::new(controls).centered().dark_gray(), chunks[2]);
+}
+
+/// Render the mode tab selector
+fn render_mode_tabs(frame: &mut Frame, area: Rect, app: &App) {
+    let timer_style = if app.settings.mode == SettingsMode::Timer {
+        Style::default().fg(Color::Cyan).bold()
+    } else {
+        Style::default().dark_gray()
+    };
+    let cat_style = if app.settings.mode == SettingsMode::Categories {
+        Style::default().fg(Color::Cyan).bold()
+    } else {
+        Style::default().dark_gray()
+    };
+
+    let tabs = Line::from(vec![
+        Span::styled("[1] Timer", timer_style),
+        Span::raw("   "),
+        Span::styled("[2] Categories", cat_style),
+    ]);
+    frame.render_widget(Paragraph::new(tabs).centered(), area);
+}
+
+/// Render timer settings content
+fn render_timer_settings(frame: &mut Frame, area: Rect, app: &App) {
+    let chunks = Layout::vertical([
         Constraint::Length(2), // Work duration
         Constraint::Length(2), // Short break
         Constraint::Length(2), // Long break
         Constraint::Length(2), // Sessions until long break
-        Constraint::Length(1), // Spacer
-        Constraint::Length(2), // Controls
     ])
-    .split(inner);
+    .split(area);
 
     // Helper to render a settings row
     let render_row = |field: SettingsField, label: &str, value: i64, unit: &str| {
@@ -101,17 +168,136 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
         )),
         chunks[3],
     );
+}
+
+/// Render category settings content
+fn render_category_settings(frame: &mut Frame, area: Rect, app: &App) {
+    match app.settings.category_field {
+        CategoryField::List => render_category_list(frame, area, app),
+        CategoryField::Name | CategoryField::Color => render_category_form(frame, area, app),
+    }
+}
+
+/// Render the category list
+fn render_category_list(frame: &mut Frame, area: Rect, app: &App) {
+    let lines: Vec<Line> = app
+        .data
+        .categories
+        .iter()
+        .enumerate()
+        .map(|(i, cat)| {
+            let is_selected = i == app.settings.category_list_index;
+            let prefix = if is_selected { "> " } else { "  " };
+            let style = if is_selected {
+                Style::default().fg(Color::Yellow).bold()
+            } else {
+                Style::default()
+            };
+
+            Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled("■ ", Style::default().fg(cat.color)),
+                Span::styled(&cat.name, style),
+            ])
+        })
+        .collect();
+
+    if lines.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No categories. Press [n] to create one.")
+                .centered()
+                .dark_gray(),
+            area,
+        );
+    } else {
+        frame.render_widget(Paragraph::new(lines), area);
+    }
+}
+
+/// Render the new category form
+fn render_category_form(frame: &mut Frame, area: Rect, app: &App) {
+    let chunks = Layout::vertical([
+        Constraint::Length(1), // Title
+        Constraint::Length(2), // Name field
+        Constraint::Length(2), // Color field
+        Constraint::Length(1), // Preview
+        Constraint::Min(1),    // Spacer
+        Constraint::Length(1), // Controls
+    ])
+    .split(area);
+
+    // Title
+    let title = if app.settings.editing_category_id.is_some() {
+        "Edit Category"
+    } else {
+        "New Category"
+    };
+    frame.render_widget(Paragraph::new(title).centered().bold(), chunks[0]);
+
+    // Name field
+    let name_style = if app.settings.category_field == CategoryField::Name {
+        Style::default().fg(Color::Yellow).bold()
+    } else {
+        Style::default()
+    };
+    let name_value = if app.settings.category_field == CategoryField::Name {
+        format!("{}_", app.settings.new_category_name)
+    } else {
+        app.settings.new_category_name.to_string()
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Name:  ", name_style),
+            Span::styled(name_value, name_style),
+        ])),
+        chunks[1],
+    );
+
+    // Color field
+    let color_style = if app.settings.category_field == CategoryField::Color {
+        Style::default().fg(Color::Yellow).bold()
+    } else {
+        Style::default()
+    };
+    let color_value = if app.settings.category_field == CategoryField::Color {
+        format!("{}_", app.settings.new_category_color)
+    } else {
+        app.settings.new_category_color.to_string()
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Color: ", color_style),
+            Span::styled(color_value, color_style),
+        ])),
+        chunks[2],
+    );
+
+    // Color preview
+    let preview_color =
+        crate::models::parse_hex_color(&app.settings.new_category_color.to_string());
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw("Preview: "),
+            Span::styled("■■■■■", Style::default().fg(preview_color)),
+        ])),
+        chunks[3],
+    );
 
     // Controls
-    let controls = Line::from(vec![
-        Span::styled("[Enter]", Style::default().bold()),
-        Span::raw(" Save   "),
-        Span::styled("[Tab/↑↓]", Style::default().bold()),
-        Span::raw(" Navigate   "),
-        Span::styled("[Esc]", Style::default().bold()),
-        Span::raw(" Cancel"),
-    ]);
-    frame.render_widget(Paragraph::new(controls).centered().dark_gray(), chunks[5]);
+    let action = if app.settings.editing_category_id.is_some() {
+        "Save"
+    } else {
+        "Create"
+    };
+    frame.render_widget(
+        Paragraph::new(format!(
+            "[Tab] Switch field  [Enter] {}  [Esc] Cancel",
+            action
+        ))
+        .centered()
+        .dark_gray(),
+        chunks[5],
+    );
 }
 
 /// Format a config value for display (convert seconds to minutes for durations)

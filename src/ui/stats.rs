@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::app::{App, StatsPeriod};
-use crate::models::CategoryStat;
+use crate::models::{Category, CategoryStat};
 use crate::ui;
 
 /// Render the statistics view
@@ -67,8 +67,18 @@ pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
     ])
     .split(chunks[2]);
 
-    render_bar_chart(frame, chart_chunks[0], &app.data.category_stats);
-    render_legend(frame, chart_chunks[1], &app.data.category_stats);
+    render_bar_chart(
+        frame,
+        chart_chunks[0],
+        &app.data.category_stats,
+        &app.data.categories,
+    );
+    render_legend(
+        frame,
+        chart_chunks[1],
+        &app.data.category_stats,
+        &app.data.categories,
+    );
 
     // Summary stats
     let total_secs: i64 = app
@@ -106,7 +116,21 @@ pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
     ui::render_footer(frame, chunks[5], app, "[Tab] Timer  [h] History  [q] Quit");
 }
 
-fn render_bar_chart(frame: &mut Frame, area: Rect, stats: &[CategoryStat]) {
+/// Look up a category's color by name, with gray fallback
+fn get_category_color(categories: &[Category], name: &str) -> Color {
+    categories
+        .iter()
+        .find(|c| c.name == name)
+        .map(|c| c.color)
+        .unwrap_or(Color::Gray)
+}
+
+fn render_bar_chart(
+    frame: &mut Frame,
+    area: Rect,
+    stats: &[CategoryStat],
+    categories: &[Category],
+) {
     if stats.is_empty() {
         frame.render_widget(
             Paragraph::new("No data for this period")
@@ -119,19 +143,9 @@ fn render_bar_chart(frame: &mut Frame, area: Rect, stats: &[CategoryStat]) {
 
     let max_secs = stats.iter().map(|s| s.total_seconds).max().unwrap_or(1);
 
-    let colors = [
-        Color::Red,
-        Color::Cyan,
-        Color::Blue,
-        Color::Green,
-        Color::Yellow,
-        Color::Magenta,
-    ];
-
     let bars: Vec<Bar> = stats
         .iter()
-        .enumerate()
-        .map(|(i, stat)| {
+        .map(|stat| {
             let hours = stat.total_seconds / 3600;
             let mins = (stat.total_seconds % 3600) / 60;
             let label = if hours > 0 {
@@ -139,11 +153,12 @@ fn render_bar_chart(frame: &mut Frame, area: Rect, stats: &[CategoryStat]) {
             } else {
                 format!("{}m", mins)
             };
+            let color = get_category_color(categories, &stat.name);
             Bar::default()
                 .value(stat.total_seconds as u64)
                 .label(Line::from(stat.name.clone()))
                 .text_value(label)
-                .style(Style::default().fg(colors[i % colors.len()]))
+                .style(Style::default().fg(color))
         })
         .collect();
 
@@ -161,25 +176,15 @@ fn render_bar_chart(frame: &mut Frame, area: Rect, stats: &[CategoryStat]) {
     frame.render_widget(chart, area);
 }
 
-fn render_legend(frame: &mut Frame, area: Rect, stats: &[CategoryStat]) {
+fn render_legend(frame: &mut Frame, area: Rect, stats: &[CategoryStat], categories: &[Category]) {
     let total_secs: i64 = stats.iter().map(|s| s.total_seconds).sum();
     if total_secs == 0 {
         return;
     }
 
-    let colors = [
-        Color::Red,
-        Color::Cyan,
-        Color::Blue,
-        Color::Green,
-        Color::Yellow,
-        Color::Magenta,
-    ];
-
     let lines: Vec<Line> = stats
         .iter()
-        .enumerate()
-        .map(|(i, stat)| {
+        .map(|stat| {
             let hours = stat.total_seconds / 3600;
             let mins = (stat.total_seconds % 3600) / 60;
             let pct = (stat.total_seconds as f64 / total_secs as f64) * 100.0;
@@ -188,12 +193,10 @@ fn render_legend(frame: &mut Frame, area: Rect, stats: &[CategoryStat]) {
             } else {
                 format!("{}m", mins)
             };
+            let color = get_category_color(categories, &stat.name);
             Line::from(vec![
-                Span::styled("■ ", Style::default().fg(colors[i % colors.len()])),
-                Span::styled(
-                    format!("{:<12}", stat.name),
-                    Style::default().fg(colors[i % colors.len()]),
-                ),
+                Span::styled("■ ", Style::default().fg(color)),
+                Span::styled(format!("{:<12}", stat.name), Style::default().fg(color)),
                 Span::raw(format!("{:>8}  ({:.0}%)", time_str, pct)),
             ])
         })

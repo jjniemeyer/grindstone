@@ -1,6 +1,10 @@
+use ratatui::style::Color;
 use rusqlite::{Connection, params};
 
-use crate::models::{Category, CategoryStat, Config, Session, SessionId};
+use crate::models::{
+    Category, CategoryId, CategoryStat, Config, Session, SessionId, format_hex_color,
+    parse_hex_color,
+};
 
 /// Save a session to the database
 pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<SessionId> {
@@ -76,10 +80,11 @@ pub fn get_categories(conn: &Connection) -> rusqlite::Result<Vec<Category>> {
     let mut stmt = conn.prepare("SELECT id, name, color FROM categories ORDER BY name")?;
 
     let categories = stmt.query_map([], |row| {
+        let color_hex: String = row.get(2)?;
         Ok(Category {
             id: Some(row.get(0)?),
             name: row.get(1)?,
-            color: row.get(2)?,
+            color: parse_hex_color(&color_hex),
         })
     })?;
 
@@ -89,6 +94,49 @@ pub fn get_categories(conn: &Connection) -> rusqlite::Result<Vec<Category>> {
 /// Delete a session by ID
 pub fn delete_session(conn: &Connection, id: SessionId) -> rusqlite::Result<usize> {
     conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])
+}
+
+/// Create a new category
+pub fn create_category(
+    conn: &Connection,
+    name: &str,
+    color: Color,
+) -> rusqlite::Result<CategoryId> {
+    let color_hex = format_hex_color(color);
+    conn.execute(
+        "INSERT INTO categories (name, color) VALUES (?1, ?2)",
+        params![name, color_hex],
+    )?;
+    Ok(CategoryId::from(conn.last_insert_rowid()))
+}
+
+/// Delete a category by ID
+pub fn delete_category(conn: &Connection, id: CategoryId) -> rusqlite::Result<usize> {
+    conn.execute("DELETE FROM categories WHERE id = ?1", params![id])
+}
+
+/// Update a category's name and color
+pub fn update_category(
+    conn: &Connection,
+    id: CategoryId,
+    name: &str,
+    color: Color,
+) -> rusqlite::Result<usize> {
+    let color_hex = format_hex_color(color);
+    conn.execute(
+        "UPDATE categories SET name = ?1, color = ?2 WHERE id = ?3",
+        params![name, color_hex, id],
+    )
+}
+
+/// Check if a category is in use by any session
+pub fn is_category_in_use(conn: &Connection, name: &str) -> rusqlite::Result<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sessions WHERE category = ?1",
+        params![name],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
 }
 
 /// Get timer configuration from database
@@ -229,5 +277,59 @@ mod tests {
         // Reload and verify
         let loaded = get_config(&db.conn).unwrap();
         assert_eq!(loaded.work_duration_secs, 30 * 60);
+    }
+
+    #[test]
+    fn test_create_and_delete_category() {
+        let db = Database::open_in_memory().unwrap();
+
+        // Count initial categories
+        let initial = get_categories(&db.conn).unwrap();
+        let initial_count = initial.len();
+
+        // Create a new category
+        let color = Color::Rgb(255, 0, 0);
+        let id = create_category(&db.conn, "test_category", color).unwrap();
+        assert!(i64::from(id) > 0);
+
+        // Verify it was created
+        let categories = get_categories(&db.conn).unwrap();
+        assert_eq!(categories.len(), initial_count + 1);
+        assert!(categories.iter().any(|c| c.name == "test_category"));
+
+        // Delete it
+        let deleted = delete_category(&db.conn, id).unwrap();
+        assert_eq!(deleted, 1);
+
+        // Verify it's gone
+        let categories = get_categories(&db.conn).unwrap();
+        assert_eq!(categories.len(), initial_count);
+        assert!(!categories.iter().any(|c| c.name == "test_category"));
+    }
+
+    #[test]
+    fn test_is_category_in_use() {
+        let db = Database::open_in_memory().unwrap();
+
+        // "coding" exists but has no sessions
+        assert!(!is_category_in_use(&db.conn, "coding").unwrap());
+
+        // Create a session with "coding" category
+        let session = Session {
+            id: None,
+            name: "Test".to_string(),
+            description: None,
+            category: "coding".to_string(),
+            started_at: Timestamp::new(1000),
+            ended_at: Timestamp::new(2000),
+            duration_secs: DurationSecs::new(1000),
+        };
+        save_session(&db.conn, &session).unwrap();
+
+        // Now "coding" is in use
+        assert!(is_category_in_use(&db.conn, "coding").unwrap());
+
+        // "work" still has no sessions
+        assert!(!is_category_in_use(&db.conn, "work").unwrap());
     }
 }
