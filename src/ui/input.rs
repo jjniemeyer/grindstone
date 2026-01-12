@@ -73,6 +73,7 @@ pub fn render_input_modal(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(desc_text).block(desc_block), chunks[1]);
 
     // Category selector
+    let selected_cat = &app.data.categories[app.input.selected_category];
     let cat_style = if app.input.field == InputField::Category {
         Style::default().fg(Color::Yellow).bold()
     } else {
@@ -81,10 +82,8 @@ pub fn render_input_modal(frame: &mut Frame, area: Rect, app: &App) {
     let category_line = Line::from(vec![
         Span::raw("Category: "),
         Span::styled("< ", Style::default().dark_gray()),
-        Span::styled(
-            &app.data.categories[app.input.selected_category].name,
-            cat_style,
-        ),
+        Span::styled("■ ", Style::default().fg(selected_cat.color)),
+        Span::styled(&selected_cat.name, cat_style),
         Span::styled(" >", Style::default().dark_gray()),
         Span::raw("  (←/→ to change)"),
     ]);
