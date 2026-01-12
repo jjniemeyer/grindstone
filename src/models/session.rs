@@ -2,6 +2,8 @@ use chrono::{DateTime, Local};
 use ratatui::style::Color;
 use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
+use crate::clock::Clock;
+
 /// A string with a maximum length enforced at runtime.
 /// Silently ignores characters that would exceed the limit.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -63,6 +65,13 @@ impl Timestamp {
         Timestamp(secs)
     }
 
+    /// Create a timestamp from the current time using a Clock
+    pub fn from_clock(clock: &impl Clock) -> Self {
+        Timestamp(clock.now_timestamp())
+    }
+
+    /// Create a timestamp from the current system time
+    /// Prefer `from_clock` for testability
     pub fn now() -> Self {
         Timestamp(Local::now().timestamp())
     }
@@ -605,5 +614,18 @@ mod tests {
             sessions_until_long_break: 4,
         };
         assert!(!negative.is_valid());
+    }
+
+    #[test]
+    fn test_timestamp_from_clock() {
+        use crate::clock::SystemClock;
+
+        let clock = SystemClock;
+        let ts = Timestamp::from_clock(&clock);
+        let now = Timestamp::now();
+
+        // Both should be within 1 second of each other
+        let diff = (i64::from(ts) - i64::from(now)).abs();
+        assert!(diff <= 1);
     }
 }
