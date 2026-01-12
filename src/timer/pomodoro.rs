@@ -264,4 +264,28 @@ mod tests {
         assert_eq!(timer.phase, TimerPhase::LongBreak);
         assert_eq!(timer.sessions_completed, 0);
     }
+
+    #[test]
+    fn test_sessions_completed_at_high_threshold() {
+        let mut timer = PomodoroTimer::new();
+        timer.sessions_until_long = 255;
+        timer.sessions_completed = 254;
+
+        // Should not overflow - increment to 255 triggers long break
+        timer.advance_phase();
+        assert_eq!(timer.phase, TimerPhase::LongBreak);
+        assert_eq!(timer.sessions_completed, 0);
+    }
+
+    #[test]
+    fn test_sessions_completed_with_threshold_one() {
+        let mut timer = PomodoroTimer::new();
+        timer.sessions_until_long = 1;
+        timer.sessions_completed = 0;
+
+        // Every work session should trigger long break when threshold is 1
+        timer.advance_phase();
+        assert_eq!(timer.phase, TimerPhase::LongBreak);
+        assert_eq!(timer.sessions_completed, 0);
+    }
 }
