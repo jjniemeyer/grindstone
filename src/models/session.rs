@@ -10,22 +10,6 @@ use crate::clock::Clock;
 pub struct BoundedString<const MAX: usize>(String);
 
 impl<const MAX: usize> BoundedString<MAX> {
-    /// Create from a string, truncating to fit within MAX bytes.
-    /// Truncation respects UTF-8 character boundaries.
-    pub fn from_string(s: impl Into<String>) -> Self {
-        let s = s.into();
-        if s.len() <= MAX {
-            BoundedString(s)
-        } else {
-            // Find the last valid UTF-8 boundary within MAX bytes
-            let mut end = MAX;
-            while end > 0 && !s.is_char_boundary(end) {
-                end -= 1;
-            }
-            BoundedString(s[..end].to_string())
-        }
-    }
-
     pub fn push(&mut self, c: char) {
         if self.0.len() + c.len_utf8() <= MAX {
             self.0.push(c);
@@ -38,11 +22,6 @@ impl<const MAX: usize> BoundedString<MAX> {
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-
-    /// Check if the string is blank (empty or contains only whitespace)
-    pub fn is_blank(&self) -> bool {
-        self.0.trim().is_empty()
     }
 
     pub fn clear(&mut self) {
@@ -489,54 +468,6 @@ mod tests {
         s.push('🎉'); // 4 bytes, fits exactly
         s.push('a'); // Would exceed, ignored
         assert_eq!(s.to_string(), "🎉");
-    }
-
-    #[test]
-    fn test_bounded_string_whitespace_only() {
-        let mut s: BoundedString<10> = BoundedString::default();
-        s.push(' ');
-        s.push(' ');
-        s.push(' ');
-        assert!(!s.is_empty()); // is_empty only checks length, not content
-        assert!(s.is_blank()); // is_blank checks for whitespace-only
-    }
-
-    #[test]
-    fn test_bounded_string_is_blank() {
-        let empty: BoundedString<10> = BoundedString::default();
-        assert!(empty.is_blank());
-
-        let whitespace: BoundedString<10> = BoundedString::from_string("   ");
-        assert!(whitespace.is_blank());
-
-        let content: BoundedString<10> = BoundedString::from_string("hello");
-        assert!(!content.is_blank());
-
-        let mixed: BoundedString<10> = BoundedString::from_string("  hi  ");
-        assert!(!mixed.is_blank());
-    }
-
-    #[test]
-    fn test_bounded_string_from_string() {
-        let s: BoundedString<5> = BoundedString::from_string("abc");
-        assert_eq!(s.to_string(), "abc");
-
-        let s: BoundedString<5> = BoundedString::from_string("abcdefgh");
-        assert_eq!(s.to_string(), "abcde");
-    }
-
-    #[test]
-    fn test_bounded_string_from_string_utf8_truncation() {
-        // "héllo" - é is 2 bytes, so "héll" is 5 bytes
-        let s: BoundedString<5> = BoundedString::from_string("héllo");
-        assert_eq!(s.to_string(), "héll");
-
-        // Truncating in the middle of a multi-byte character
-        let s: BoundedString<2> = BoundedString::from_string("é"); // é is 2 bytes
-        assert_eq!(s.to_string(), "é");
-
-        let s: BoundedString<1> = BoundedString::from_string("é"); // Can't fit, truncates to empty
-        assert_eq!(s.to_string(), "");
     }
 
     #[test]
