@@ -551,6 +551,7 @@ dependencies = [
  "directories",
  "ratatui",
  "rusqlite",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
