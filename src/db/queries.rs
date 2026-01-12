@@ -332,4 +332,28 @@ mod tests {
         // "work" still has no sessions
         assert!(!is_category_in_use(&db.conn, "work").unwrap());
     }
+
+    #[test]
+    fn test_time_by_category_large_sums() {
+        let db = Database::open_in_memory().unwrap();
+
+        // Create 10 sessions of 25 minutes each = 15000 seconds total
+        for i in 0..10 {
+            let session = Session {
+                id: None,
+                name: format!("Session {}", i),
+                description: None,
+                category: "coding".to_string(),
+                started_at: Timestamp::new(1000 + i * 2000),
+                ended_at: Timestamp::new(1000 + i * 2000 + 1500),
+                duration_secs: DurationSecs::new(1500),
+            };
+            save_session(&db.conn, &session).unwrap();
+        }
+
+        let totals = get_time_by_category(&db.conn, 0, i64::MAX).unwrap();
+        assert_eq!(totals.len(), 1);
+        assert_eq!(totals[0].name, "coding");
+        assert_eq!(totals[0].total_seconds, 15000);
+    }
 }
