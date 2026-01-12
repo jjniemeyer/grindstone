@@ -51,7 +51,7 @@ pub fn render_input_modal(frame: &mut Frame, area: Rect, app: &App) {
     let name_text = if app.input.field == InputField::Name {
         format!("{}_", app.input.name)
     } else {
-        app.input.name.clone()
+        app.input.name.to_string()
     };
     frame.render_widget(Paragraph::new(name_text).block(name_block), chunks[0]);
 
@@ -68,7 +68,7 @@ pub fn render_input_modal(frame: &mut Frame, area: Rect, app: &App) {
     let desc_text = if app.input.field == InputField::Description {
         format!("{}_", app.input.description)
     } else {
-        app.input.description.clone()
+        app.input.description.to_string()
     };
     frame.render_widget(Paragraph::new(desc_text).block(desc_block), chunks[1]);
 

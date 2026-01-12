@@ -5,7 +5,9 @@ use ratatui::{DefaultTerminal, Frame, widgets::ListState};
 use crate::config::TICK_RATE;
 use crate::db::{self, Database};
 use crate::event::{AppEvent, poll_event};
-use crate::models::{Category, CategoryStat, Config, DurationSecs, Session, Timestamp};
+use crate::models::{
+    BoundedString, Category, CategoryStat, Config, DurationSecs, Session, Timestamp,
+};
 use crate::timer::PomodoroTimer;
 use crate::ui::{
     render_history, render_input_modal, render_settings_modal, render_stats, render_timer,
@@ -156,8 +158,8 @@ impl SettingsField {
 #[derive(Debug, Clone, Default)]
 pub struct InputState {
     pub field: InputField,
-    pub name: String,
-    pub description: String,
+    pub name: BoundedString<100>,
+    pub description: BoundedString<500>,
     pub selected_category: usize,
 }
 
@@ -616,18 +618,18 @@ impl App {
         let description = if self.input.description.is_empty() {
             None
         } else {
-            Some(self.input.description.clone())
+            Some(self.input.description.to_string())
         };
 
-        let session = Session {
-            id: None,
-            name: self.input.name.clone(),
-            description,
-            category,
-            started_at: Timestamp::new(0),
-            ended_at: Timestamp::new(0),
-            duration_secs: DurationSecs::new(0),
-        };
+        let session = Session::builder()
+            .name(self.input.name.to_string())
+            .description(description)
+            .category(category)
+            .started_at(Timestamp::new(0))
+            .ended_at(Timestamp::new(0))
+            .duration_secs(DurationSecs::new(0))
+            .build()
+            .expect("session fields validated by UI");
 
         self.session_phase = SessionPhase::Ready(session);
     }

@@ -1,6 +1,37 @@
 use chrono::{DateTime, Local};
 use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
+/// A string with a maximum length enforced at runtime.
+/// Silently ignores characters that would exceed the limit.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BoundedString<const MAX: usize>(String);
+
+impl<const MAX: usize> BoundedString<MAX> {
+    pub fn push(&mut self, c: char) {
+        if self.0.len() + c.len_utf8() <= MAX {
+            self.0.push(c);
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<char> {
+        self.0.pop()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear()
+    }
+}
+
+impl<const MAX: usize> std::fmt::Display for BoundedString<MAX> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Unix timestamp in seconds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Timestamp(i64);
@@ -166,6 +197,11 @@ pub struct Session {
 }
 
 impl Session {
+    /// Create a new SessionBuilder
+    pub fn builder() -> SessionBuilder {
+        SessionBuilder::new()
+    }
+
     /// Get the start time as a DateTime
     pub fn start_datetime(&self) -> DateTime<Local> {
         self.started_at.to_datetime()
@@ -187,6 +223,66 @@ impl Session {
         } else {
             format!("{}m", minutes)
         }
+    }
+}
+
+/// Builder for creating Session instances
+#[derive(Debug, Default)]
+pub struct SessionBuilder {
+    name: Option<String>,
+    description: Option<String>,
+    category: Option<String>,
+    started_at: Option<Timestamp>,
+    ended_at: Option<Timestamp>,
+    duration_secs: Option<DurationSecs>,
+}
+
+impl SessionBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn description(mut self, desc: Option<String>) -> Self {
+        self.description = desc;
+        self
+    }
+
+    pub fn category(mut self, category: impl Into<String>) -> Self {
+        self.category = Some(category.into());
+        self
+    }
+
+    pub fn started_at(mut self, ts: Timestamp) -> Self {
+        self.started_at = Some(ts);
+        self
+    }
+
+    pub fn ended_at(mut self, ts: Timestamp) -> Self {
+        self.ended_at = Some(ts);
+        self
+    }
+
+    pub fn duration_secs(mut self, d: DurationSecs) -> Self {
+        self.duration_secs = Some(d);
+        self
+    }
+
+    /// Build the Session, returning None if required fields are missing
+    pub fn build(self) -> Option<Session> {
+        Some(Session {
+            id: None,
+            name: self.name?,
+            description: self.description,
+            category: self.category?,
+            started_at: self.started_at?,
+            ended_at: self.ended_at?,
+            duration_secs: self.duration_secs?,
+        })
     }
 }
 
