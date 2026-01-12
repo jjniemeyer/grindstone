@@ -101,7 +101,7 @@ impl InputField {
     }
 }
 
-/// Which field is focused in the settings modal
+/// Which field is focused in the settings modal (timer mode)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SettingsField {
     #[default]
@@ -109,6 +109,23 @@ pub enum SettingsField {
     ShortBreak,
     LongBreak,
     SessionsUntilLong,
+}
+
+/// Which mode/tab is active in the settings modal
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SettingsMode {
+    #[default]
+    Timer,
+    Categories,
+}
+
+/// Which field is focused in category editing mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CategoryField {
+    #[default]
+    List,
+    Name,
+    Color,
 }
 
 /// The current modal state - only one modal can be open at a time
@@ -181,9 +198,16 @@ pub struct InputState {
 /// State for the settings modal
 #[derive(Debug, Clone, Default)]
 pub struct SettingsState {
+    pub mode: SettingsMode,
+    // Timer mode fields
     pub field: SettingsField,
     pub editing_value: String,
     pub editing_config: Config,
+    // Category mode fields
+    pub category_field: CategoryField,
+    pub category_list_index: usize,
+    pub new_category_name: BoundedString<50>,
+    pub new_category_color: BoundedString<7>,
 }
 
 /// Persisted application data
