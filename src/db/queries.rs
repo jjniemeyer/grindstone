@@ -1,6 +1,6 @@
 use rusqlite::{Connection, params};
 
-use crate::models::{Category, CategoryStat, Config, Session, SessionId};
+use crate::models::{parse_hex_color, Category, CategoryStat, Config, Session, SessionId};
 
 /// Save a session to the database
 pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<SessionId> {
@@ -76,10 +76,11 @@ pub fn get_categories(conn: &Connection) -> rusqlite::Result<Vec<Category>> {
     let mut stmt = conn.prepare("SELECT id, name, color FROM categories ORDER BY name")?;
 
     let categories = stmt.query_map([], |row| {
+        let color_hex: String = row.get(2)?;
         Ok(Category {
             id: Some(row.get(0)?),
             name: row.get(1)?,
-            color: row.get(2)?,
+            color: parse_hex_color(&color_hex),
         })
     })?;
 

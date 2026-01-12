@@ -1,5 +1,6 @@
 mod session;
 
 pub use session::{
-    BoundedString, Category, CategoryStat, Config, DurationSecs, Session, SessionId, Timestamp,
+    format_hex_color, parse_hex_color, BoundedString, Category, CategoryId, CategoryStat, Config,
+    DurationSecs, Session, SessionId, Timestamp,
 };

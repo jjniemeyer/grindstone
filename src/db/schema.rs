@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-use crate::models::{Category, Config};
+use crate::models::{format_hex_color, Category, Config};
 
 /// Initialize the database schema
 pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -40,7 +40,8 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         let mut stmt =
             conn.prepare("INSERT OR IGNORE INTO categories (name, color) VALUES (?1, ?2)")?;
         for category in Category::defaults() {
-            stmt.execute([&category.name, &category.color])?;
+            let color_hex = format_hex_color(category.color);
+            stmt.execute([&category.name, &color_hex])?;
         }
     }
 

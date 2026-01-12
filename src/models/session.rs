@@ -1,4 +1,5 @@
 use chrono::{DateTime, Local};
+use ratatui::style::Color;
 use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
 /// A string with a maximum length enforced at runtime.
@@ -289,10 +290,9 @@ impl SessionBuilder {
 /// A category for sessions with an associated color
 #[derive(Debug, Clone)]
 pub struct Category {
-    #[allow(dead_code)]
     pub id: Option<CategoryId>,
     pub name: String,
-    pub color: String, // Hex color like "#FF6B6B"
+    pub color: Color,
 }
 
 impl Category {
@@ -302,34 +302,54 @@ impl Category {
             Self {
                 id: None,
                 name: "work".to_string(),
-                color: "#FF6B6B".to_string(),
+                color: Color::Rgb(255, 107, 107), // #FF6B6B
             },
             Self {
                 id: None,
                 name: "study".to_string(),
-                color: "#4ECDC4".to_string(),
+                color: Color::Rgb(78, 205, 196), // #4ECDC4
             },
             Self {
                 id: None,
                 name: "coding".to_string(),
-                color: "#45B7D1".to_string(),
+                color: Color::Rgb(69, 183, 209), // #45B7D1
             },
             Self {
                 id: None,
                 name: "reading".to_string(),
-                color: "#96CEB4".to_string(),
+                color: Color::Rgb(150, 206, 180), // #96CEB4
             },
             Self {
                 id: None,
                 name: "exercise".to_string(),
-                color: "#FFEAA7".to_string(),
+                color: Color::Rgb(255, 234, 167), // #FFEAA7
             },
             Self {
                 id: None,
                 name: "other".to_string(),
-                color: "#DFE6E9".to_string(),
+                color: Color::Rgb(223, 230, 233), // #DFE6E9
             },
         ]
+    }
+}
+
+/// Parse a hex color string like "#FF6B6B" to a ratatui Color
+pub fn parse_hex_color(hex: &str) -> Color {
+    let hex = hex.strip_prefix('#').unwrap_or(hex);
+    if hex.len() != 6 {
+        return Color::Gray;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(128);
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(128);
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(128);
+    Color::Rgb(r, g, b)
+}
+
+/// Format a ratatui Color as a hex string like "#FF6B6B"
+pub fn format_hex_color(color: Color) -> String {
+    match color {
+        Color::Rgb(r, g, b) => format!("#{:02X}{:02X}{:02X}", r, g, b),
+        _ => "#808080".to_string(), // Gray fallback for non-RGB colors
     }
 }
 
