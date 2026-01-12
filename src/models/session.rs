@@ -1,18 +1,35 @@
 use chrono::{DateTime, Local};
+use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
 /// Unix timestamp in seconds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub struct Timestamp(pub i64);
+pub struct Timestamp(i64);
 
 impl Timestamp {
+    pub fn new(secs: i64) -> Self {
+        Timestamp(secs)
+    }
+
     pub fn now() -> Self {
         Timestamp(Local::now().timestamp())
+    }
+
+    pub fn to_datetime(self) -> DateTime<Local> {
+        DateTime::from_timestamp(self.0, 0)
+            .map(|dt| dt.with_timezone(&Local))
+            .unwrap_or_else(Local::now)
     }
 }
 
 impl From<i64> for Timestamp {
     fn from(val: i64) -> Self {
         Timestamp(val)
+    }
+}
+
+impl From<Timestamp> for i64 {
+    fn from(t: Timestamp) -> Self {
+        t.0
     }
 }
 
@@ -24,9 +41,31 @@ impl std::ops::Sub for Timestamp {
     }
 }
 
+impl ToSql for Timestamp {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
+}
+
+impl FromSql for Timestamp {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        i64::column_result(value).map(Timestamp)
+    }
+}
+
 /// Duration in seconds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub struct DurationSecs(pub i64);
+pub struct DurationSecs(i64);
+
+impl DurationSecs {
+    pub fn new(secs: i64) -> Self {
+        DurationSecs(secs)
+    }
+
+    pub fn as_secs(self) -> i64 {
+        self.0
+    }
+}
 
 impl From<i64> for DurationSecs {
     fn from(val: i64) -> Self {
@@ -34,9 +73,33 @@ impl From<i64> for DurationSecs {
     }
 }
 
+impl From<DurationSecs> for i64 {
+    fn from(d: DurationSecs) -> Self {
+        d.0
+    }
+}
+
+impl ToSql for DurationSecs {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
+}
+
+impl FromSql for DurationSecs {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        i64::column_result(value).map(DurationSecs)
+    }
+}
+
 /// Database row ID for a session
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SessionId(pub i64);
+pub struct SessionId(i64);
+
+impl SessionId {
+    pub fn new(id: i64) -> Self {
+        SessionId(id)
+    }
+}
 
 impl From<i64> for SessionId {
     fn from(val: i64) -> Self {
@@ -44,13 +107,49 @@ impl From<i64> for SessionId {
     }
 }
 
+impl From<SessionId> for i64 {
+    fn from(id: SessionId) -> Self {
+        id.0
+    }
+}
+
+impl ToSql for SessionId {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
+}
+
+impl FromSql for SessionId {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        i64::column_result(value).map(SessionId)
+    }
+}
+
 /// Database row ID for a category
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CategoryId(pub i64);
+pub struct CategoryId(i64);
 
 impl From<i64> for CategoryId {
     fn from(val: i64) -> Self {
         CategoryId(val)
+    }
+}
+
+impl From<CategoryId> for i64 {
+    fn from(id: CategoryId) -> Self {
+        id.0
+    }
+}
+
+impl ToSql for CategoryId {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
+}
+
+impl FromSql for CategoryId {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        i64::column_result(value).map(CategoryId)
     }
 }
 
@@ -69,21 +168,17 @@ pub struct Session {
 impl Session {
     /// Get the start time as a DateTime
     pub fn start_datetime(&self) -> DateTime<Local> {
-        DateTime::from_timestamp(self.started_at.0, 0)
-            .map(|dt| dt.with_timezone(&Local))
-            .unwrap_or_else(Local::now)
+        self.started_at.to_datetime()
     }
 
     /// Get the end time as a DateTime
     pub fn end_datetime(&self) -> DateTime<Local> {
-        DateTime::from_timestamp(self.ended_at.0, 0)
-            .map(|dt| dt.with_timezone(&Local))
-            .unwrap_or_else(Local::now)
+        self.ended_at.to_datetime()
     }
 
     /// Format duration as "Xh Ym" or "Xm"
     pub fn format_duration(&self) -> String {
-        let minutes = self.duration_secs.0 / 60;
+        let minutes = self.duration_secs.as_secs() / 60;
         let hours = minutes / 60;
         let remaining_minutes = minutes % 60;
 

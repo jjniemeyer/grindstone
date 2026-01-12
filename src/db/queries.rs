@@ -1,8 +1,6 @@
 use rusqlite::{Connection, params};
 
-use crate::models::{
-    Category, CategoryId, CategoryStat, Config, DurationSecs, Session, SessionId, Timestamp,
-};
+use crate::models::{Category, CategoryStat, Config, Session, SessionId};
 
 /// Save a session to the database
 pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<SessionId> {
@@ -13,12 +11,12 @@ pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<Se
             session.name,
             session.description,
             session.category,
-            session.started_at.0,
-            session.ended_at.0,
-            session.duration_secs.0,
+            session.started_at,
+            session.ended_at,
+            session.duration_secs,
         ],
     )?;
-    Ok(SessionId(conn.last_insert_rowid()))
+    Ok(SessionId::new(conn.last_insert_rowid()))
 }
 
 /// Get sessions within a time range
@@ -36,13 +34,13 @@ pub fn get_sessions_in_range(
 
     let sessions = stmt.query_map(params![start, end], |row| {
         Ok(Session {
-            id: Some(SessionId(row.get(0)?)),
+            id: Some(row.get(0)?),
             name: row.get(1)?,
             description: row.get(2)?,
             category: row.get(3)?,
-            started_at: Timestamp(row.get(4)?),
-            ended_at: Timestamp(row.get(5)?),
-            duration_secs: DurationSecs(row.get(6)?),
+            started_at: row.get(4)?,
+            ended_at: row.get(5)?,
+            duration_secs: row.get(6)?,
         })
     })?;
 
@@ -79,7 +77,7 @@ pub fn get_categories(conn: &Connection) -> rusqlite::Result<Vec<Category>> {
 
     let categories = stmt.query_map([], |row| {
         Ok(Category {
-            id: Some(CategoryId(row.get(0)?)),
+            id: Some(row.get(0)?),
             name: row.get(1)?,
             color: row.get(2)?,
         })
@@ -90,7 +88,7 @@ pub fn get_categories(conn: &Connection) -> rusqlite::Result<Vec<Category>> {
 
 /// Delete a session by ID
 pub fn delete_session(conn: &Connection, id: SessionId) -> rusqlite::Result<usize> {
-    conn.execute("DELETE FROM sessions WHERE id = ?1", params![id.0])
+    conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])
 }
 
 /// Get timer configuration from database
@@ -137,6 +135,7 @@ pub fn save_config(conn: &Connection, config: &Config) -> rusqlite::Result<()> {
 mod tests {
     use super::*;
     use crate::db::Database;
+    use crate::models::{DurationSecs, Timestamp};
 
     #[test]
     fn test_save_and_load_session() {
@@ -146,18 +145,18 @@ mod tests {
             name: "Test session".to_string(),
             description: Some("Description".to_string()),
             category: "coding".to_string(),
-            started_at: Timestamp(1000),
-            ended_at: Timestamp(2500),
-            duration_secs: DurationSecs(1500),
+            started_at: Timestamp::new(1000),
+            ended_at: Timestamp::new(2500),
+            duration_secs: DurationSecs::new(1500),
         };
 
         let id = save_session(&db.conn, &session).unwrap();
-        assert!(id.0 > 0);
+        assert!(i64::from(id) > 0);
 
         let sessions = get_sessions_in_range(&db.conn, 0, 3000).unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].name, "Test session");
-        assert_eq!(sessions[0].duration_secs, DurationSecs(1500));
+        assert_eq!(sessions[0].duration_secs, DurationSecs::new(1500));
     }
 
     #[test]
@@ -169,27 +168,27 @@ mod tests {
             name: "Work 1".to_string(),
             description: None,
             category: "coding".to_string(),
-            started_at: Timestamp(1000),
-            ended_at: Timestamp(2000),
-            duration_secs: DurationSecs(1000),
+            started_at: Timestamp::new(1000),
+            ended_at: Timestamp::new(2000),
+            duration_secs: DurationSecs::new(1000),
         };
         let s2 = Session {
             id: None,
             name: "Work 2".to_string(),
             description: None,
             category: "coding".to_string(),
-            started_at: Timestamp(2000),
-            ended_at: Timestamp(3000),
-            duration_secs: DurationSecs(1000),
+            started_at: Timestamp::new(2000),
+            ended_at: Timestamp::new(3000),
+            duration_secs: DurationSecs::new(1000),
         };
         let s3 = Session {
             id: None,
             name: "Meeting".to_string(),
             description: None,
             category: "work".to_string(),
-            started_at: Timestamp(3000),
-            ended_at: Timestamp(4000),
-            duration_secs: DurationSecs(1000),
+            started_at: Timestamp::new(3000),
+            ended_at: Timestamp::new(4000),
+            duration_secs: DurationSecs::new(1000),
         };
 
         save_session(&db.conn, &s1).unwrap();

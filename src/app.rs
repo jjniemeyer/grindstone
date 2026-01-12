@@ -624,9 +624,9 @@ impl App {
             name: self.input.name.clone(),
             description,
             category,
-            started_at: Timestamp(0),
-            ended_at: Timestamp(0),
-            duration_secs: DurationSecs(0),
+            started_at: Timestamp::new(0),
+            ended_at: Timestamp::new(0),
+            duration_secs: DurationSecs::new(0),
         };
 
         self.session_phase = SessionPhase::Ready(session);
