@@ -6,13 +6,13 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
-use crate::app::{App, SettingsField};
+use crate::app::{App, SettingsField, SettingsMode};
 
 /// Render the settings modal as an overlay
 pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
     // Calculate modal size and position (centered)
-    let modal_width = 45.min(area.width.saturating_sub(4));
-    let modal_height = 14.min(area.height.saturating_sub(4));
+    let modal_width = 50.min(area.width.saturating_sub(4));
+    let modal_height = 18.min(area.height.saturating_sub(4));
     let modal_x = (area.width.saturating_sub(modal_width)) / 2;
     let modal_y = (area.height.saturating_sub(modal_height)) / 2;
 
@@ -31,14 +31,79 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(block, modal_area);
 
     let chunks = Layout::vertical([
+        Constraint::Length(2), // Mode tabs
+        Constraint::Min(1),    // Content area
+        Constraint::Length(2), // Controls
+    ])
+    .split(inner);
+
+    // Mode tabs
+    render_mode_tabs(frame, chunks[0], app);
+
+    // Content based on mode
+    match app.settings.mode {
+        SettingsMode::Timer => render_timer_settings(frame, chunks[1], app),
+        SettingsMode::Categories => render_category_settings(frame, chunks[1], app),
+    }
+
+    // Controls based on mode
+    let controls = match app.settings.mode {
+        SettingsMode::Timer => Line::from(vec![
+            Span::styled("[Enter]", Style::default().bold()),
+            Span::raw(" Save  "),
+            Span::styled("[Tab/↑↓]", Style::default().bold()),
+            Span::raw(" Navigate  "),
+            Span::styled("[1/2]", Style::default().bold()),
+            Span::raw(" Mode  "),
+            Span::styled("[Esc]", Style::default().bold()),
+            Span::raw(" Close"),
+        ]),
+        SettingsMode::Categories => Line::from(vec![
+            Span::styled("[n]", Style::default().bold()),
+            Span::raw(" New  "),
+            Span::styled("[d]", Style::default().bold()),
+            Span::raw(" Delete  "),
+            Span::styled("[j/k]", Style::default().bold()),
+            Span::raw(" Navigate  "),
+            Span::styled("[1/2]", Style::default().bold()),
+            Span::raw(" Mode  "),
+            Span::styled("[Esc]", Style::default().bold()),
+            Span::raw(" Close"),
+        ]),
+    };
+    frame.render_widget(Paragraph::new(controls).centered().dark_gray(), chunks[2]);
+}
+
+/// Render the mode tab selector
+fn render_mode_tabs(frame: &mut Frame, area: Rect, app: &App) {
+    let timer_style = if app.settings.mode == SettingsMode::Timer {
+        Style::default().fg(Color::Cyan).bold()
+    } else {
+        Style::default().dark_gray()
+    };
+    let cat_style = if app.settings.mode == SettingsMode::Categories {
+        Style::default().fg(Color::Cyan).bold()
+    } else {
+        Style::default().dark_gray()
+    };
+
+    let tabs = Line::from(vec![
+        Span::styled("[1] Timer", timer_style),
+        Span::raw("   "),
+        Span::styled("[2] Categories", cat_style),
+    ]);
+    frame.render_widget(Paragraph::new(tabs).centered(), area);
+}
+
+/// Render timer settings content
+fn render_timer_settings(frame: &mut Frame, area: Rect, app: &App) {
+    let chunks = Layout::vertical([
         Constraint::Length(2), // Work duration
         Constraint::Length(2), // Short break
         Constraint::Length(2), // Long break
         Constraint::Length(2), // Sessions until long break
-        Constraint::Length(1), // Spacer
-        Constraint::Length(2), // Controls
     ])
-    .split(inner);
+    .split(area);
 
     // Helper to render a settings row
     let render_row = |field: SettingsField, label: &str, value: i64, unit: &str| {
@@ -101,17 +166,14 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
         )),
         chunks[3],
     );
+}
 
-    // Controls
-    let controls = Line::from(vec![
-        Span::styled("[Enter]", Style::default().bold()),
-        Span::raw(" Save   "),
-        Span::styled("[Tab/↑↓]", Style::default().bold()),
-        Span::raw(" Navigate   "),
-        Span::styled("[Esc]", Style::default().bold()),
-        Span::raw(" Cancel"),
-    ]);
-    frame.render_widget(Paragraph::new(controls).centered().dark_gray(), chunks[5]);
+/// Render category settings content (placeholder for now)
+fn render_category_settings(frame: &mut Frame, area: Rect, _app: &App) {
+    frame.render_widget(
+        Paragraph::new("Category management coming soon...").centered().dark_gray(),
+        area,
+    );
 }
 
 /// Format a config value for display (convert seconds to minutes for durations)
