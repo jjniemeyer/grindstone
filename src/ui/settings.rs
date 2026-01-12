@@ -232,10 +232,7 @@ fn render_category_form(frame: &mut Frame, area: Rect, app: &App) {
     } else {
         "New Category"
     };
-    frame.render_widget(
-        Paragraph::new(title).centered().bold(),
-        chunks[0],
-    );
+    frame.render_widget(Paragraph::new(title).centered().bold(), chunks[0]);
 
     // Name field
     let name_style = if app.settings.category_field == CategoryField::Name {
@@ -293,9 +290,12 @@ fn render_category_form(frame: &mut Frame, area: Rect, app: &App) {
         "Create"
     };
     frame.render_widget(
-        Paragraph::new(format!("[Tab] Switch field  [Enter] {}  [Esc] Cancel", action))
-            .centered()
-            .dark_gray(),
+        Paragraph::new(format!(
+            "[Tab] Switch field  [Enter] {}  [Esc] Cancel",
+            action
+        ))
+        .centered()
+        .dark_gray(),
         chunks[5],
     );
 }

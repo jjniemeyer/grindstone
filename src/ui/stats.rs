@@ -176,12 +176,7 @@ fn render_bar_chart(
     frame.render_widget(chart, area);
 }
 
-fn render_legend(
-    frame: &mut Frame,
-    area: Rect,
-    stats: &[CategoryStat],
-    categories: &[Category],
-) {
+fn render_legend(frame: &mut Frame, area: Rect, stats: &[CategoryStat], categories: &[Category]) {
     let total_secs: i64 = stats.iter().map(|s| s.total_seconds).sum();
     if total_secs == 0 {
         return;

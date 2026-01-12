@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-use crate::models::{format_hex_color, Category, Config};
+use crate::models::{Category, Config, format_hex_color};
 
 /// Initialize the database schema
 pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {

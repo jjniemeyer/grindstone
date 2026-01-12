@@ -2,8 +2,8 @@ use ratatui::style::Color;
 use rusqlite::{Connection, params};
 
 use crate::models::{
-    format_hex_color, parse_hex_color, Category, CategoryId, CategoryStat, Config, Session,
-    SessionId,
+    Category, CategoryId, CategoryStat, Config, Session, SessionId, format_hex_color,
+    parse_hex_color,
 };
 
 /// Save a session to the database
@@ -97,7 +97,11 @@ pub fn delete_session(conn: &Connection, id: SessionId) -> rusqlite::Result<usiz
 }
 
 /// Create a new category
-pub fn create_category(conn: &Connection, name: &str, color: Color) -> rusqlite::Result<CategoryId> {
+pub fn create_category(
+    conn: &Connection,
+    name: &str,
+    color: Color,
+) -> rusqlite::Result<CategoryId> {
     let color_hex = format_hex_color(color);
     conn.execute(
         "INSERT INTO categories (name, color) VALUES (?1, ?2)",
