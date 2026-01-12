@@ -973,7 +973,9 @@ impl App {
                 let end_time = Timestamp::from_clock(&*self.clock);
                 session.started_at = start_time;
                 session.ended_at = end_time;
-                session.duration_secs = end_time - start_time;
+                // Use configured work duration, not wall-clock time
+                session.duration_secs =
+                    DurationSecs::new(self.timer.work_duration.as_secs() as i64);
 
                 if let Some(ref db) = self.db
                     && let Err(e) = db.save_session(&session)
