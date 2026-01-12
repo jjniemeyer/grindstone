@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
-use crate::app::{App, SettingsField, SettingsMode};
+use crate::app::{App, CategoryField, SettingsField, SettingsMode};
 
 /// Render the settings modal as an overlay
 pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
@@ -168,10 +168,54 @@ fn render_timer_settings(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
-/// Render category settings content (placeholder for now)
-fn render_category_settings(frame: &mut Frame, area: Rect, _app: &App) {
+/// Render category settings content
+fn render_category_settings(frame: &mut Frame, area: Rect, app: &App) {
+    match app.settings.category_field {
+        CategoryField::List => render_category_list(frame, area, app),
+        CategoryField::Name | CategoryField::Color => render_category_form(frame, area, app),
+    }
+}
+
+/// Render the category list
+fn render_category_list(frame: &mut Frame, area: Rect, app: &App) {
+    let lines: Vec<Line> = app
+        .data
+        .categories
+        .iter()
+        .enumerate()
+        .map(|(i, cat)| {
+            let is_selected = i == app.settings.category_list_index;
+            let prefix = if is_selected { "> " } else { "  " };
+            let style = if is_selected {
+                Style::default().fg(Color::Yellow).bold()
+            } else {
+                Style::default()
+            };
+
+            Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled("■ ", Style::default().fg(cat.color)),
+                Span::styled(&cat.name, style),
+            ])
+        })
+        .collect();
+
+    if lines.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No categories. Press [n] to create one.")
+                .centered()
+                .dark_gray(),
+            area,
+        );
+    } else {
+        frame.render_widget(Paragraph::new(lines), area);
+    }
+}
+
+/// Render the new category form (placeholder for commit 8)
+fn render_category_form(frame: &mut Frame, area: Rect, _app: &App) {
     frame.render_widget(
-        Paragraph::new("Category management coming soon...").centered().dark_gray(),
+        Paragraph::new("New category form...").centered().dark_gray(),
         area,
     );
 }
