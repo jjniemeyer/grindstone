@@ -7,7 +7,7 @@ use crate::config::TICK_RATE;
 use crate::db::{self, Database};
 use crate::event::{AppEvent, poll_event};
 use crate::models::{
-    BoundedString, Category, CategoryStat, Config, DurationSecs, Session, Timestamp,
+    BoundedString, Category, CategoryId, CategoryStat, Config, DurationSecs, Session, Timestamp,
 };
 use crate::timer::PomodoroTimer;
 use crate::ui::{
@@ -208,6 +208,7 @@ pub struct SettingsState {
     pub category_list_index: usize,
     pub new_category_name: BoundedString<50>,
     pub new_category_color: BoundedString<7>,
+    pub editing_category_id: Option<CategoryId>, // Some when editing, None when creating
 }
 
 /// Persisted application data
@@ -616,10 +617,15 @@ impl App {
                 self.settings.category_field = CategoryField::Name;
                 self.settings.new_category_name.clear();
                 self.settings.new_category_color.clear();
+                self.settings.editing_category_id = None;
                 // Pre-fill with a default color
                 for c in "#808080".chars() {
                     self.settings.new_category_color.push(c);
                 }
+            }
+            KeyCode::Char('e') => {
+                // Edit selected category
+                self.start_editing_category();
             }
             KeyCode::Char('d') => {
                 self.delete_selected_category();
@@ -644,7 +650,7 @@ impl App {
                 };
             }
             KeyCode::Enter => {
-                self.create_new_category();
+                self.save_category();
             }
             KeyCode::Backspace => match self.settings.category_field {
                 CategoryField::Name => {
@@ -671,8 +677,33 @@ impl App {
         }
     }
 
-    /// Create a new category from the form
-    fn create_new_category(&mut self) {
+    /// Start editing the selected category
+    fn start_editing_category(&mut self) {
+        let idx = self.settings.category_list_index;
+        if idx >= self.data.categories.len() {
+            return;
+        }
+
+        let category = &self.data.categories[idx];
+
+        // Pre-fill the form with current values
+        self.settings.new_category_name.clear();
+        for c in category.name.chars() {
+            self.settings.new_category_name.push(c);
+        }
+
+        self.settings.new_category_color.clear();
+        let color_hex = crate::models::format_hex_color(category.color);
+        for c in color_hex.chars() {
+            self.settings.new_category_color.push(c);
+        }
+
+        self.settings.editing_category_id = category.id;
+        self.settings.category_field = CategoryField::Name;
+    }
+
+    /// Save category (create new or update existing)
+    fn save_category(&mut self) {
         let name = self.settings.new_category_name.to_string();
         let color_str = self.settings.new_category_color.to_string();
 
@@ -681,24 +712,36 @@ impl App {
             return;
         }
 
-        // Check for duplicate name
-        if self.data.categories.iter().any(|c| c.name == name) {
-            self.notify(NotificationLevel::Warning, "Category already exists");
-            return;
-        }
-
         // Parse color (use default if invalid)
         let color = crate::models::parse_hex_color(&color_str);
 
         if let Some(ref db) = self.db {
-            match db::create_category(&db.conn, &name, color) {
-                Ok(_) => {
+            let result = if let Some(id) = self.settings.editing_category_id {
+                // Update existing category
+                db::update_category(&db.conn, id, &name, color)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            } else {
+                // Check for duplicate name when creating
+                if self.data.categories.iter().any(|c| c.name == name) {
+                    self.notify(NotificationLevel::Warning, "Category already exists");
+                    return;
+                }
+                // Create new category
+                db::create_category(&db.conn, &name, color)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            };
+
+            match result {
+                Ok(()) => {
                     self.refresh_categories();
                     self.settings.category_field = CategoryField::List;
+                    self.settings.editing_category_id = None;
                 }
                 Err(e) => {
-                    warn!("Failed to create category: {}", e);
-                    self.notify(NotificationLevel::Warning, "Failed to create category");
+                    warn!("Failed to save category: {}", e);
+                    self.notify(NotificationLevel::Warning, "Failed to save category");
                 }
             }
         } else {
