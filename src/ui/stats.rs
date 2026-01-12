@@ -23,7 +23,7 @@ pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(3), // Period selector
         Constraint::Min(1),    // Chart area
         Constraint::Length(3), // Summary
-        Constraint::Length(1), // Controls
+        Constraint::Length(2), // Controls
         Constraint::Length(1), // Footer
     ])
     .split(area);
