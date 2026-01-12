@@ -34,10 +34,30 @@ impl From<i64> for DurationSecs {
     }
 }
 
+/// Database row ID for a session
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SessionId(pub i64);
+
+impl From<i64> for SessionId {
+    fn from(val: i64) -> Self {
+        SessionId(val)
+    }
+}
+
+/// Database row ID for a category
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CategoryId(pub i64);
+
+impl From<i64> for CategoryId {
+    fn from(val: i64) -> Self {
+        CategoryId(val)
+    }
+}
+
 /// A completed pomodoro session
 #[derive(Debug, Clone)]
 pub struct Session {
-    pub id: Option<i64>,
+    pub id: Option<SessionId>,
     pub name: String,
     pub description: Option<String>,
     pub category: String,
@@ -79,7 +99,7 @@ impl Session {
 #[derive(Debug, Clone)]
 pub struct Category {
     #[allow(dead_code)]
-    pub id: Option<i64>,
+    pub id: Option<CategoryId>,
     pub name: String,
     pub color: String, // Hex color like "#FF6B6B"
 }

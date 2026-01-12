@@ -1,9 +1,11 @@
 use rusqlite::{Connection, params};
 
-use crate::models::{Category, CategoryStat, Config, DurationSecs, Session, Timestamp};
+use crate::models::{
+    Category, CategoryId, CategoryStat, Config, DurationSecs, Session, SessionId, Timestamp,
+};
 
 /// Save a session to the database
-pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<i64> {
+pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<SessionId> {
     conn.execute(
         "INSERT INTO sessions (name, description, category, started_at, ended_at, duration_secs)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -16,7 +18,7 @@ pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<i6
             session.duration_secs.0,
         ],
     )?;
-    Ok(conn.last_insert_rowid())
+    Ok(SessionId(conn.last_insert_rowid()))
 }
 
 /// Get sessions within a time range
@@ -34,7 +36,7 @@ pub fn get_sessions_in_range(
 
     let sessions = stmt.query_map(params![start, end], |row| {
         Ok(Session {
-            id: Some(row.get(0)?),
+            id: Some(SessionId(row.get(0)?)),
             name: row.get(1)?,
             description: row.get(2)?,
             category: row.get(3)?,
@@ -77,7 +79,7 @@ pub fn get_categories(conn: &Connection) -> rusqlite::Result<Vec<Category>> {
 
     let categories = stmt.query_map([], |row| {
         Ok(Category {
-            id: Some(row.get(0)?),
+            id: Some(CategoryId(row.get(0)?)),
             name: row.get(1)?,
             color: row.get(2)?,
         })
@@ -87,8 +89,8 @@ pub fn get_categories(conn: &Connection) -> rusqlite::Result<Vec<Category>> {
 }
 
 /// Delete a session by ID
-pub fn delete_session(conn: &Connection, id: i64) -> rusqlite::Result<usize> {
-    conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])
+pub fn delete_session(conn: &Connection, id: SessionId) -> rusqlite::Result<usize> {
+    conn.execute("DELETE FROM sessions WHERE id = ?1", params![id.0])
 }
 
 /// Get timer configuration from database
@@ -150,7 +152,7 @@ mod tests {
         };
 
         let id = save_session(&db.conn, &session).unwrap();
-        assert!(id > 0);
+        assert!(id.0 > 0);
 
         let sessions = get_sessions_in_range(&db.conn, 0, 3000).unwrap();
         assert_eq!(sessions.len(), 1);
