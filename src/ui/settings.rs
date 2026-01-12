@@ -212,11 +212,79 @@ fn render_category_list(frame: &mut Frame, area: Rect, app: &App) {
     }
 }
 
-/// Render the new category form (placeholder for commit 8)
-fn render_category_form(frame: &mut Frame, area: Rect, _app: &App) {
+/// Render the new category form
+fn render_category_form(frame: &mut Frame, area: Rect, app: &App) {
+    let chunks = Layout::vertical([
+        Constraint::Length(1), // Title
+        Constraint::Length(2), // Name field
+        Constraint::Length(2), // Color field
+        Constraint::Length(1), // Preview
+        Constraint::Min(1),    // Spacer
+        Constraint::Length(1), // Controls
+    ])
+    .split(area);
+
+    // Title
     frame.render_widget(
-        Paragraph::new("New category form...").centered().dark_gray(),
-        area,
+        Paragraph::new("New Category").centered().bold(),
+        chunks[0],
+    );
+
+    // Name field
+    let name_style = if app.settings.category_field == CategoryField::Name {
+        Style::default().fg(Color::Yellow).bold()
+    } else {
+        Style::default()
+    };
+    let name_value = if app.settings.category_field == CategoryField::Name {
+        format!("{}_", app.settings.new_category_name)
+    } else {
+        app.settings.new_category_name.to_string()
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Name:  ", name_style),
+            Span::styled(name_value, name_style),
+        ])),
+        chunks[1],
+    );
+
+    // Color field
+    let color_style = if app.settings.category_field == CategoryField::Color {
+        Style::default().fg(Color::Yellow).bold()
+    } else {
+        Style::default()
+    };
+    let color_value = if app.settings.category_field == CategoryField::Color {
+        format!("{}_", app.settings.new_category_color)
+    } else {
+        app.settings.new_category_color.to_string()
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Color: ", color_style),
+            Span::styled(color_value, color_style),
+        ])),
+        chunks[2],
+    );
+
+    // Color preview
+    let preview_color =
+        crate::models::parse_hex_color(&app.settings.new_category_color.to_string());
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw("Preview: "),
+            Span::styled("■■■■■", Style::default().fg(preview_color)),
+        ])),
+        chunks[3],
+    );
+
+    // Controls
+    frame.render_widget(
+        Paragraph::new("[Tab] Switch field  [Enter] Create  [Esc] Cancel")
+            .centered()
+            .dark_gray(),
+        chunks[5],
     );
 }
 
