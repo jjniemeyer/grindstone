@@ -56,6 +56,12 @@ impl<const MAX: usize> std::fmt::Display for BoundedString<MAX> {
     }
 }
 
+impl<const MAX: usize> AsRef<str> for BoundedString<MAX> {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Unix timestamp in seconds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Timestamp(i64);

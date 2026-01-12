@@ -14,6 +14,9 @@ use crate::timer::PomodoroTimer;
 use crate::ui::{
     render_history, render_input_modal, render_settings_modal, render_stats, render_timer,
 };
+use crate::validation::{
+    validate_new_category_name, validate_session_name, validate_update_category_name,
+};
 
 /// The current view/screen
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -490,7 +493,7 @@ impl App {
                 self.input.field = self.input.field.next();
             }
             KeyCode::Enter => {
-                if !self.input.name.is_empty() {
+                if validate_session_name(self.input.name.as_ref()) {
                     self.create_session();
                     self.modal = ModalState::None;
                     self.start_timer();
@@ -712,24 +715,33 @@ impl App {
         let name = self.settings.new_category_name.to_string();
         let color_str = self.settings.new_category_color.to_string();
 
-        if name.is_empty() {
-            self.notify(NotificationLevel::Warning, "Category name required");
-            return;
-        }
-
         // Parse color (use default if invalid)
         let color = crate::models::parse_hex_color(&color_str);
 
         if let Some(ref db) = self.db {
             let result = if let Some(id) = self.settings.editing_category_id {
+                // Validate for update - find current name to allow keeping it
+                let current_name = self
+                    .data
+                    .categories
+                    .iter()
+                    .find(|c| c.id == Some(id))
+                    .map(|c| c.name.as_str())
+                    .unwrap_or("");
+                if let Err(msg) =
+                    validate_update_category_name(&name, &self.data.categories, current_name)
+                {
+                    self.notify(NotificationLevel::Warning, msg);
+                    return;
+                }
                 // Update existing category
                 db.update_category(id, &name, color)
                     .map(|_| ())
                     .map_err(|e| e.to_string())
             } else {
-                // Check for duplicate name when creating
-                if self.data.categories.iter().any(|c| c.name == name) {
-                    self.notify(NotificationLevel::Warning, "Category already exists");
+                // Validate for create
+                if let Err(msg) = validate_new_category_name(&name, &self.data.categories) {
+                    self.notify(NotificationLevel::Warning, msg);
                     return;
                 }
                 // Create new category

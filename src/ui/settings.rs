@@ -273,8 +273,7 @@ fn render_category_form(frame: &mut Frame, area: Rect, app: &App) {
     );
 
     // Color preview
-    let preview_color =
-        crate::models::parse_hex_color(&app.settings.new_category_color.to_string());
+    let preview_color = crate::models::parse_hex_color(app.settings.new_category_color.as_ref());
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::raw("Preview: "),
