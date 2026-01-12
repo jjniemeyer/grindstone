@@ -86,6 +86,23 @@ impl StatsPeriod {
     }
 }
 
+/// The chart type for statistics visualization
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ChartType {
+    #[default]
+    Bar,
+    Pie,
+}
+
+impl ChartType {
+    pub fn toggle(self) -> Self {
+        match self {
+            ChartType::Bar => ChartType::Pie,
+            ChartType::Pie => ChartType::Bar,
+        }
+    }
+}
+
 /// Which input field is focused in the input modal
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InputField {
@@ -223,6 +240,7 @@ pub struct AppData {
     pub sessions: Vec<Session>,
     pub history_state: ListState,
     pub stats_period: StatsPeriod,
+    pub chart_type: ChartType,
     pub category_stats: Vec<CategoryStat>,
 }
 
@@ -257,6 +275,7 @@ impl Default for App {
                 sessions: Vec::new(),
                 history_state: ListState::default(),
                 stats_period: StatsPeriod::Day,
+                chart_type: ChartType::Bar,
                 category_stats: Vec::new(),
             },
             notification: None,
@@ -483,6 +502,9 @@ impl App {
             KeyCode::Right | KeyCode::Char('l') => {
                 self.data.stats_period = self.data.stats_period.next();
                 self.refresh_data();
+            }
+            KeyCode::Char('v') => {
+                self.data.chart_type = self.data.chart_type.toggle();
             }
             _ => {}
         }

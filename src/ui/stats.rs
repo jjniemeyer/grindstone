@@ -1,12 +1,18 @@
+use std::f64::consts::PI;
+
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Style, Stylize},
+    symbols::Marker,
     text::{Line, Span},
-    widgets::{Bar, BarChart, BarGroup, Block, Borders, Paragraph},
+    widgets::{
+        Bar, BarChart, BarGroup, Block, Borders, Paragraph,
+        canvas::{Canvas, Points},
+    },
 };
 
-use crate::app::{App, StatsPeriod};
+use crate::app::{App, ChartType, StatsPeriod};
 use crate::models::{Category, CategoryStat};
 use crate::ui;
 
@@ -17,7 +23,7 @@ pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(3), // Period selector
         Constraint::Min(1),    // Chart area
         Constraint::Length(3), // Summary
-        Constraint::Length(1), // Controls
+        Constraint::Length(2), // Controls
         Constraint::Length(1), // Footer
     ])
     .split(area);
@@ -67,12 +73,20 @@ pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
     ])
     .split(chunks[2]);
 
-    render_bar_chart(
-        frame,
-        chart_chunks[0],
-        &app.data.category_stats,
-        &app.data.categories,
-    );
+    match app.data.chart_type {
+        ChartType::Bar => render_bar_chart(
+            frame,
+            chart_chunks[0],
+            &app.data.category_stats,
+            &app.data.categories,
+        ),
+        ChartType::Pie => render_pie_chart(
+            frame,
+            chart_chunks[0],
+            &app.data.category_stats,
+            &app.data.categories,
+        ),
+    }
     render_legend(
         frame,
         chart_chunks[1],
@@ -103,7 +117,7 @@ pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
     );
 
     // Controls
-    let controls = "[</> or h/l] Change Period";
+    let controls = "[</> or h/l] Change Period  [v] Toggle Chart";
     frame.render_widget(
         Paragraph::new(controls)
             .centered()
@@ -174,6 +188,79 @@ fn render_bar_chart(
         .max(max_secs as u64);
 
     frame.render_widget(chart, area);
+}
+
+fn render_pie_chart(
+    frame: &mut Frame,
+    area: Rect,
+    stats: &[CategoryStat],
+    categories: &[Category],
+) {
+    if stats.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No data for this period")
+                .centered()
+                .dark_gray(),
+            area,
+        );
+        return;
+    }
+
+    let total_secs: i64 = stats.iter().map(|s| s.total_seconds).sum();
+    if total_secs == 0 {
+        return;
+    }
+
+    // Calculate slices as (start_angle, end_angle, color)
+    let mut slices: Vec<(f64, f64, Color)> = Vec::new();
+    let mut current_angle = -PI / 2.0; // Start from top (12 o'clock)
+
+    for stat in stats {
+        let proportion = stat.total_seconds as f64 / total_secs as f64;
+        let sweep = proportion * 2.0 * PI;
+        let color = get_category_color(categories, &stat.name);
+        slices.push((current_angle, current_angle + sweep, color));
+        current_angle += sweep;
+    }
+
+    // Determine radius based on area size (account for 2:1 terminal char aspect ratio)
+    let radius = (area.height as f64).min(area.width as f64 / 2.0) - 2.0;
+
+    let canvas = Canvas::default()
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Time Distribution"),
+        )
+        .marker(Marker::HalfBlock)
+        .x_bounds([-radius - 1.0, radius + 1.0])
+        .y_bounds([-radius - 1.0, radius + 1.0])
+        .paint(|ctx| {
+            // Fill each wedge with points
+            for (start_angle, end_angle, color) in &slices {
+                let mut points: Vec<(f64, f64)> = Vec::new();
+
+                // Fill the wedge by iterating through radii and angles
+                let radius_steps = (radius as usize).max(10);
+                for r_step in 1..=radius_steps {
+                    let r = (r_step as f64 / radius_steps as f64) * radius;
+                    // More angle steps at larger radii for smooth fill
+                    let angle_steps = ((r * 4.0) as usize).max(8);
+                    for a_step in 0..=angle_steps {
+                        let angle = start_angle
+                            + (end_angle - start_angle) * (a_step as f64 / angle_steps as f64);
+                        points.push((angle.cos() * r, angle.sin() * r));
+                    }
+                }
+
+                ctx.draw(&Points {
+                    coords: &points,
+                    color: *color,
+                });
+            }
+        });
+
+    frame.render_widget(canvas, area);
 }
 
 fn render_legend(frame: &mut Frame, area: Rect, stats: &[CategoryStat], categories: &[Category]) {
