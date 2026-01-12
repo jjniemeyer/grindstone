@@ -7,6 +7,7 @@ mod event;
 mod models;
 mod timer;
 mod ui;
+mod validation;
 
 use app::App;
 use log::LevelFilter;
