@@ -8,13 +8,15 @@ use ratatui::{
 };
 
 use crate::app::App;
+use crate::ui;
 
 /// Render the history view
 pub fn render_history(frame: &mut Frame, area: Rect, app: &mut App) {
     let chunks = Layout::vertical([
         Constraint::Length(3), // Title
         Constraint::Min(1),    // Session list
-        Constraint::Length(2), // Controls
+        Constraint::Length(1), // Controls
+        Constraint::Length(1), // Footer
     ])
     .split(area);
 
@@ -40,7 +42,7 @@ pub fn render_history(frame: &mut Frame, area: Rect, app: &mut App) {
     frame.render_stateful_widget(list, chunks[1], &mut app.data.history_state);
 
     // Controls
-    let controls = "[j/k] Navigate  [d] Delete  [Tab] Timer  [t] Stats  [q] Quit";
+    let controls = "[j/k] Navigate  [d] Delete";
     frame.render_widget(
         Paragraph::new(controls)
             .centered()
@@ -48,6 +50,9 @@ pub fn render_history(frame: &mut Frame, area: Rect, app: &mut App) {
             .block(Block::default().borders(Borders::TOP)),
         chunks[2],
     );
+
+    // Footer / notification
+    ui::render_footer(frame, chunks[3], app, "[Tab] Timer  [t] Stats  [q] Quit");
 }
 
 fn build_history_items(sessions: &[crate::models::Session]) -> Vec<ListItem<'static>> {

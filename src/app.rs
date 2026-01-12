@@ -1,5 +1,6 @@
 use chrono::{Datelike, Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use log::{error, warn};
 use ratatui::{DefaultTerminal, Frame, widgets::ListState};
 
 use crate::config::TICK_RATE;
@@ -134,6 +135,20 @@ pub enum SessionPhase {
     },
 }
 
+/// Notification severity level
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationLevel {
+    Warning,
+    Error,
+}
+
+/// A notification message to display to the user
+#[derive(Debug, Clone)]
+pub struct Notification {
+    pub message: String,
+    pub level: NotificationLevel,
+}
+
 impl SettingsField {
     pub fn next(&self) -> Self {
         match self {
@@ -192,6 +207,7 @@ pub struct App {
     pub input: InputState,
     pub settings: SettingsState,
     pub data: AppData,
+    pub notification: Option<Notification>,
     db: Option<Database>,
 }
 
@@ -213,6 +229,7 @@ impl Default for App {
                 stats_period: StatsPeriod::Day,
                 category_stats: Vec::new(),
             },
+            notification: None,
             db: None,
         }
     }
@@ -243,8 +260,8 @@ impl App {
                 app.refresh_data();
             }
             Err(e) => {
-                eprintln!("Warning: Could not open database: {}", e);
-                // Continue without database
+                warn!("Could not open database: {}", e);
+                app.notify(NotificationLevel::Warning, "Running without database");
             }
         }
 
@@ -302,6 +319,9 @@ impl App {
 
     /// Handle a key event
     fn handle_key_event(&mut self, key: KeyEvent) {
+        // Clear any notification on key press
+        self.notification = None;
+
         // Handle modal input first
         match self.modal {
             ModalState::Settings => {
@@ -405,7 +425,8 @@ impl App {
                     && let Some(ref db) = self.db
                 {
                     if let Err(e) = db::queries::delete_session(&db.conn, id) {
-                        eprintln!("Failed to delete session: {}", e);
+                        warn!("Failed to delete session: {}", e);
+                        self.notify(NotificationLevel::Warning, "Failed to delete session");
                     }
                     self.refresh_data();
                 }
@@ -569,7 +590,8 @@ impl App {
         if let Some(ref db) = self.db
             && let Err(e) = db::save_config(&db.conn, &self.data.config)
         {
-            eprintln!("Failed to save config: {}", e);
+            warn!("Failed to save config: {}", e);
+            self.notify(NotificationLevel::Warning, "Failed to save settings");
         }
     }
 
@@ -651,7 +673,8 @@ impl App {
                 if let Some(ref db) = self.db
                     && let Err(e) = db::save_session(&db.conn, &session)
                 {
-                    eprintln!("Failed to save session: {}", e);
+                    error!("Failed to save session: {}", e);
+                    self.notify(NotificationLevel::Error, "Failed to save session!");
                 }
 
                 SessionPhase::Ready(session)
@@ -676,6 +699,14 @@ impl App {
                 self.data.category_stats = stats;
             }
         }
+    }
+
+    /// Set a notification to display to the user
+    fn notify(&mut self, level: NotificationLevel, message: impl Into<String>) {
+        self.notification = Some(Notification {
+            message: message.into(),
+            level,
+        });
     }
 
     /// Quit the application
@@ -750,5 +781,43 @@ mod tests {
 
         // Config should be unchanged
         assert_eq!(app.data.config.work_duration_secs, 25 * 60);
+    }
+
+    #[test]
+    fn test_notification_set_and_clear() {
+        let mut app = App::default();
+
+        // Initially no notification
+        assert!(app.notification.is_none());
+
+        // Set a warning notification
+        app.notify(NotificationLevel::Warning, "Test warning");
+        assert!(app.notification.is_some());
+        let n = app.notification.as_ref().unwrap();
+        assert_eq!(n.message, "Test warning");
+        assert_eq!(n.level, NotificationLevel::Warning);
+
+        // Set an error notification (replaces previous)
+        app.notify(NotificationLevel::Error, "Test error");
+        let n = app.notification.as_ref().unwrap();
+        assert_eq!(n.message, "Test error");
+        assert_eq!(n.level, NotificationLevel::Error);
+
+        // Clear notification (simulates key press)
+        app.notification = None;
+        assert!(app.notification.is_none());
+    }
+
+    #[test]
+    fn test_key_press_clears_notification() {
+        let mut app = App::default();
+
+        // Set a notification
+        app.notify(NotificationLevel::Warning, "Test warning");
+        assert!(app.notification.is_some());
+
+        // Simulate a key press - notification should be cleared
+        app.handle_key_event(KeyEvent::from(KeyCode::Char('x')));
+        assert!(app.notification.is_none());
     }
 }
