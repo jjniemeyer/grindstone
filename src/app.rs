@@ -529,6 +529,29 @@ impl App {
 
     /// Handle settings modal keys
     fn handle_settings_modal_key(&mut self, key: KeyEvent) {
+        // Mode switching (works in both modes when not editing)
+        if self.settings.category_field == CategoryField::List {
+            match key.code {
+                KeyCode::Char('1') => {
+                    self.settings.mode = SettingsMode::Timer;
+                    return;
+                }
+                KeyCode::Char('2') => {
+                    self.settings.mode = SettingsMode::Categories;
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        match self.settings.mode {
+            SettingsMode::Timer => self.handle_timer_settings_key(key),
+            SettingsMode::Categories => self.handle_category_settings_key(key),
+        }
+    }
+
+    /// Handle timer settings mode keys
+    fn handle_timer_settings_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc => {
                 self.modal = ModalState::None;
@@ -554,6 +577,195 @@ impl App {
                 self.settings.editing_value.push(c);
             }
             _ => {}
+        }
+    }
+
+    /// Handle category settings mode keys
+    fn handle_category_settings_key(&mut self, key: KeyEvent) {
+        match self.settings.category_field {
+            CategoryField::List => self.handle_category_list_key(key),
+            CategoryField::Name | CategoryField::Color => self.handle_category_form_key(key),
+        }
+    }
+
+    /// Handle keys when browsing the category list
+    fn handle_category_list_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.modal = ModalState::None;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                let len = self.data.categories.len();
+                if len > 0 {
+                    self.settings.category_list_index =
+                        (self.settings.category_list_index + 1) % len;
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                let len = self.data.categories.len();
+                if len > 0 {
+                    if self.settings.category_list_index == 0 {
+                        self.settings.category_list_index = len - 1;
+                    } else {
+                        self.settings.category_list_index -= 1;
+                    }
+                }
+            }
+            KeyCode::Char('n') => {
+                // Start creating a new category
+                self.settings.category_field = CategoryField::Name;
+                self.settings.new_category_name.clear();
+                self.settings.new_category_color.clear();
+                // Pre-fill with a default color
+                for c in "#808080".chars() {
+                    self.settings.new_category_color.push(c);
+                }
+            }
+            KeyCode::Char('d') => {
+                self.delete_selected_category();
+            }
+            _ => {}
+        }
+    }
+
+    /// Handle keys when editing the new category form
+    fn handle_category_form_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                // Cancel and return to list
+                self.settings.category_field = CategoryField::List;
+            }
+            KeyCode::Tab => {
+                // Cycle between name and color fields
+                self.settings.category_field = match self.settings.category_field {
+                    CategoryField::Name => CategoryField::Color,
+                    CategoryField::Color => CategoryField::Name,
+                    CategoryField::List => CategoryField::List,
+                };
+            }
+            KeyCode::Enter => {
+                self.create_new_category();
+            }
+            KeyCode::Backspace => match self.settings.category_field {
+                CategoryField::Name => {
+                    self.settings.new_category_name.pop();
+                }
+                CategoryField::Color => {
+                    self.settings.new_category_color.pop();
+                }
+                CategoryField::List => {}
+            },
+            KeyCode::Char(c) => match self.settings.category_field {
+                CategoryField::Name => {
+                    self.settings.new_category_name.push(c);
+                }
+                CategoryField::Color => {
+                    // Only allow hex color characters
+                    if c == '#' || c.is_ascii_hexdigit() {
+                        self.settings.new_category_color.push(c);
+                    }
+                }
+                CategoryField::List => {}
+            },
+            _ => {}
+        }
+    }
+
+    /// Create a new category from the form
+    fn create_new_category(&mut self) {
+        let name = self.settings.new_category_name.to_string();
+        let color_str = self.settings.new_category_color.to_string();
+
+        if name.is_empty() {
+            self.notify(NotificationLevel::Warning, "Category name required");
+            return;
+        }
+
+        // Check for duplicate name
+        if self.data.categories.iter().any(|c| c.name == name) {
+            self.notify(NotificationLevel::Warning, "Category already exists");
+            return;
+        }
+
+        // Parse color (use default if invalid)
+        let color = crate::models::parse_hex_color(&color_str);
+
+        if let Some(ref db) = self.db {
+            match db::create_category(&db.conn, &name, color) {
+                Ok(_) => {
+                    self.refresh_categories();
+                    self.settings.category_field = CategoryField::List;
+                }
+                Err(e) => {
+                    warn!("Failed to create category: {}", e);
+                    self.notify(NotificationLevel::Warning, "Failed to create category");
+                }
+            }
+        } else {
+            self.notify(NotificationLevel::Warning, "No database connection");
+        }
+    }
+
+    /// Delete the currently selected category
+    fn delete_selected_category(&mut self) {
+        let idx = self.settings.category_list_index;
+        if idx >= self.data.categories.len() {
+            return;
+        }
+
+        let category = &self.data.categories[idx];
+        let category_name = category.name.clone();
+        let category_id = match category.id {
+            Some(id) => id,
+            None => {
+                self.notify(NotificationLevel::Warning, "Cannot delete default category");
+                return;
+            }
+        };
+
+        if let Some(ref db) = self.db {
+            // Check if category is in use
+            match db::is_category_in_use(&db.conn, &category_name) {
+                Ok(true) => {
+                    self.notify(
+                        NotificationLevel::Warning,
+                        "Cannot delete: category has sessions",
+                    );
+                    return;
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    warn!("Failed to check category usage: {}", e);
+                    return;
+                }
+            }
+
+            // Delete the category
+            match db::delete_category(&db.conn, category_id) {
+                Ok(_) => {
+                    self.refresh_categories();
+                    // Adjust selection if needed
+                    if self.settings.category_list_index >= self.data.categories.len()
+                        && !self.data.categories.is_empty()
+                    {
+                        self.settings.category_list_index = self.data.categories.len() - 1;
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to delete category: {}", e);
+                    self.notify(NotificationLevel::Warning, "Failed to delete category");
+                }
+            }
+        }
+    }
+
+    /// Refresh categories from database
+    fn refresh_categories(&mut self) {
+        if let Some(ref db) = self.db
+            && let Ok(cats) = db::get_categories(&db.conn)
+            && !cats.is_empty()
+        {
+            self.data.categories = cats;
         }
     }
 
