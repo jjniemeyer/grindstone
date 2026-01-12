@@ -288,4 +288,34 @@ mod tests {
         assert_eq!(timer.phase, TimerPhase::LongBreak);
         assert_eq!(timer.sessions_completed, 0);
     }
+
+    #[test]
+    fn test_zero_duration_work_phase() {
+        let mut timer = PomodoroTimer::new();
+        timer.work_duration = Duration::ZERO;
+
+        // Zero duration means immediately finished
+        assert!(timer.is_finished());
+        assert_eq!(timer.remaining(), Duration::ZERO);
+    }
+
+    #[test]
+    fn test_zero_duration_progress() {
+        let mut timer = PomodoroTimer::new();
+        timer.work_duration = Duration::ZERO;
+
+        // Progress should be 1.0 (100%) for zero duration to avoid division by zero
+        assert_eq!(timer.progress(), 1.0);
+    }
+
+    #[test]
+    fn test_zero_duration_break_phase() {
+        let mut timer = PomodoroTimer::new();
+        timer.short_break = Duration::ZERO;
+        timer.phase = TimerPhase::ShortBreak;
+
+        // Break with zero duration is also immediately finished
+        assert!(timer.is_finished());
+        assert_eq!(timer.progress(), 1.0);
+    }
 }
