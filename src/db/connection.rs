@@ -10,7 +10,7 @@ use super::{DatabaseOps, queries};
 
 /// Database connection wrapper
 pub struct Database {
-    pub conn: Connection,
+    pub(crate) conn: Connection,
 }
 
 impl Database {
