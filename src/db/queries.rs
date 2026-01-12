@@ -260,4 +260,58 @@ mod tests {
         let loaded = get_config(&db.conn).unwrap();
         assert_eq!(loaded.work_duration_secs, 30 * 60);
     }
+
+    #[test]
+    fn test_create_and_delete_category() {
+        let db = Database::open_in_memory().unwrap();
+
+        // Count initial categories
+        let initial = get_categories(&db.conn).unwrap();
+        let initial_count = initial.len();
+
+        // Create a new category
+        let color = Color::Rgb(255, 0, 0);
+        let id = create_category(&db.conn, "test_category", color).unwrap();
+        assert!(i64::from(id) > 0);
+
+        // Verify it was created
+        let categories = get_categories(&db.conn).unwrap();
+        assert_eq!(categories.len(), initial_count + 1);
+        assert!(categories.iter().any(|c| c.name == "test_category"));
+
+        // Delete it
+        let deleted = delete_category(&db.conn, id).unwrap();
+        assert_eq!(deleted, 1);
+
+        // Verify it's gone
+        let categories = get_categories(&db.conn).unwrap();
+        assert_eq!(categories.len(), initial_count);
+        assert!(!categories.iter().any(|c| c.name == "test_category"));
+    }
+
+    #[test]
+    fn test_is_category_in_use() {
+        let db = Database::open_in_memory().unwrap();
+
+        // "coding" exists but has no sessions
+        assert!(!is_category_in_use(&db.conn, "coding").unwrap());
+
+        // Create a session with "coding" category
+        let session = Session {
+            id: None,
+            name: "Test".to_string(),
+            description: None,
+            category: "coding".to_string(),
+            started_at: Timestamp::new(1000),
+            ended_at: Timestamp::new(2000),
+            duration_secs: DurationSecs::new(1000),
+        };
+        save_session(&db.conn, &session).unwrap();
+
+        // Now "coding" is in use
+        assert!(is_category_in_use(&db.conn, "coding").unwrap());
+
+        // "work" still has no sessions
+        assert!(!is_category_in_use(&db.conn, "work").unwrap());
+    }
 }
