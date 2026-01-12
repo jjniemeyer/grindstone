@@ -111,6 +111,20 @@ pub fn delete_category(conn: &Connection, id: CategoryId) -> rusqlite::Result<us
     conn.execute("DELETE FROM categories WHERE id = ?1", params![id])
 }
 
+/// Update a category's name and color
+pub fn update_category(
+    conn: &Connection,
+    id: CategoryId,
+    name: &str,
+    color: Color,
+) -> rusqlite::Result<usize> {
+    let color_hex = format_hex_color(color);
+    conn.execute(
+        "UPDATE categories SET name = ?1, color = ?2 WHERE id = ?3",
+        params![name, color_hex, id],
+    )
+}
+
 /// Check if a category is in use by any session
 pub fn is_category_in_use(conn: &Connection, name: &str) -> rusqlite::Result<bool> {
     let count: i64 = conn.query_row(
