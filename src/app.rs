@@ -807,4 +807,17 @@ mod tests {
         app.notification = None;
         assert!(app.notification.is_none());
     }
+
+    #[test]
+    fn test_key_press_clears_notification() {
+        let mut app = App::default();
+
+        // Set a notification
+        app.notify(NotificationLevel::Warning, "Test warning");
+        assert!(app.notification.is_some());
+
+        // Simulate a key press - notification should be cleared
+        app.handle_key_event(KeyEvent::from(KeyCode::Char('x')));
+        assert!(app.notification.is_none());
+    }
 }
