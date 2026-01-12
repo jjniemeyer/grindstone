@@ -134,6 +134,20 @@ pub enum SessionPhase {
     },
 }
 
+/// Notification severity level
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationLevel {
+    Warning,
+    Error,
+}
+
+/// A notification message to display to the user
+#[derive(Debug, Clone)]
+pub struct Notification {
+    pub message: String,
+    pub level: NotificationLevel,
+}
+
 impl SettingsField {
     pub fn next(&self) -> Self {
         match self {
@@ -192,6 +206,7 @@ pub struct App {
     pub input: InputState,
     pub settings: SettingsState,
     pub data: AppData,
+    pub notification: Option<Notification>,
     db: Option<Database>,
 }
 
@@ -213,6 +228,7 @@ impl Default for App {
                 stats_period: StatsPeriod::Day,
                 category_stats: Vec::new(),
             },
+            notification: None,
             db: None,
         }
     }
@@ -302,6 +318,9 @@ impl App {
 
     /// Handle a key event
     fn handle_key_event(&mut self, key: KeyEvent) {
+        // Clear any notification on key press
+        self.notification = None;
+
         // Handle modal input first
         match self.modal {
             ModalState::Settings => {
@@ -676,6 +695,14 @@ impl App {
                 self.data.category_stats = stats;
             }
         }
+    }
+
+    /// Set a notification to display to the user
+    fn notify(&mut self, level: NotificationLevel, message: impl Into<String>) {
+        self.notification = Some(Notification {
+            message: message.into(),
+            level,
+        });
     }
 
     /// Quit the application
