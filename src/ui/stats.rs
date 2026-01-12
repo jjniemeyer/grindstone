@@ -8,6 +8,7 @@ use ratatui::{
 
 use crate::app::{App, StatsPeriod};
 use crate::models::CategoryStat;
+use crate::ui;
 
 /// Render the statistics view
 pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
@@ -16,7 +17,8 @@ pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(3), // Period selector
         Constraint::Min(1),    // Chart area
         Constraint::Length(3), // Summary
-        Constraint::Length(2), // Controls
+        Constraint::Length(1), // Controls
+        Constraint::Length(1), // Footer
     ])
     .split(area);
 
@@ -91,7 +93,7 @@ pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
     );
 
     // Controls
-    let controls = "[</> or h/l] Change Period  [Tab] Timer  [h] History  [q] Quit";
+    let controls = "[</> or h/l] Change Period";
     frame.render_widget(
         Paragraph::new(controls)
             .centered()
@@ -99,6 +101,9 @@ pub fn render_stats(frame: &mut Frame, area: Rect, app: &App) {
             .block(Block::default().borders(Borders::TOP)),
         chunks[4],
     );
+
+    // Footer / notification
+    ui::render_footer(frame, chunks[5], app, "[Tab] Timer  [h] History  [q] Quit");
 }
 
 fn render_bar_chart(frame: &mut Frame, area: Rect, stats: &[CategoryStat]) {

@@ -8,6 +8,7 @@ use ratatui::{
 
 use crate::app::App;
 use crate::timer::TimerPhase;
+use crate::ui;
 
 /// Render the timer view
 pub fn render_timer(frame: &mut Frame, area: Rect, app: &App) {
@@ -99,7 +100,11 @@ pub fn render_timer(frame: &mut Frame, area: Rect, app: &App) {
         chunks[5],
     );
 
-    // Navigation bar
-    let nav = "[Tab] Timer  [h] History  [t] Stats  [q] Quit";
-    frame.render_widget(Paragraph::new(nav).centered().dark_gray(), chunks[6]);
+    // Navigation bar / notification
+    ui::render_footer(
+        frame,
+        chunks[6],
+        app,
+        "[Tab] Timer  [h] History  [t] Stats  [q] Quit",
+    );
 }
