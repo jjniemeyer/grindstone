@@ -3,6 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use log::{error, warn};
 use ratatui::{DefaultTerminal, Frame, widgets::ListState};
 
+use crate::clock::{Clock, SystemClock};
 use crate::config::TICK_RATE;
 use crate::db::{self, Database};
 use crate::event::{AppEvent, poll_event};
@@ -34,9 +35,9 @@ pub enum StatsPeriod {
 }
 
 impl StatsPeriod {
-    /// Get the start and end timestamps for this period
-    pub fn time_range(&self) -> (i64, i64) {
-        let now = Local::now();
+    /// Get the start and end timestamps for this period using a clock
+    pub fn time_range_with_clock(&self, clock: &dyn Clock) -> (i64, i64) {
+        let now = clock.now_datetime();
         let today_start = Local
             .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
             .unwrap();
@@ -61,6 +62,11 @@ impl StatsPeriod {
         };
 
         (start.timestamp(), end.timestamp())
+    }
+
+    /// Get the start and end timestamps for this period (uses system time)
+    pub fn time_range(&self) -> (i64, i64) {
+        self.time_range_with_clock(&SystemClock)
     }
 
     pub fn next(&self) -> Self {
@@ -234,6 +240,7 @@ pub struct App {
     pub data: AppData,
     pub notification: Option<Notification>,
     db: Option<Database>,
+    clock: Box<dyn Clock>,
 }
 
 impl Default for App {
@@ -256,6 +263,7 @@ impl Default for App {
             },
             notification: None,
             db: None,
+            clock: Box::new(SystemClock),
         }
     }
 }
@@ -908,11 +916,11 @@ impl App {
         self.session_phase = match phase {
             SessionPhase::Ready(session) => SessionPhase::Active {
                 session,
-                start_time: Timestamp::now(),
+                start_time: Timestamp::from_clock(&*self.clock),
             },
             SessionPhase::Active { session, .. } => SessionPhase::Active {
                 session,
-                start_time: Timestamp::now(),
+                start_time: Timestamp::from_clock(&*self.clock),
             },
             SessionPhase::Inactive => SessionPhase::Inactive,
         };
@@ -953,7 +961,7 @@ impl App {
                 mut session,
                 start_time,
             } => {
-                let end_time = Timestamp::now();
+                let end_time = Timestamp::from_clock(&*self.clock);
                 session.started_at = start_time;
                 session.ended_at = end_time;
                 session.duration_secs = end_time - start_time;
@@ -975,14 +983,14 @@ impl App {
     fn refresh_data(&mut self) {
         if let Some(ref db) = self.db {
             // Load sessions for history (last 30 days)
-            let now = Local::now().timestamp();
+            let now = self.clock.now_timestamp();
             let thirty_days_ago = now - (30 * 24 * 60 * 60);
             if let Ok(sessions) = db::get_sessions_in_range(&db.conn, thirty_days_ago, now) {
                 self.data.sessions = sessions;
             }
 
             // Load category stats for current period
-            let (start, end) = self.data.stats_period.time_range();
+            let (start, end) = self.data.stats_period.time_range_with_clock(&*self.clock);
             if let Ok(stats) = db::get_time_by_category(&db.conn, start, end) {
                 self.data.category_stats = stats;
             }

@@ -66,7 +66,7 @@ impl Timestamp {
     }
 
     /// Create a timestamp from the current time using a Clock
-    pub fn from_clock(clock: &impl Clock) -> Self {
+    pub fn from_clock(clock: &(impl Clock + ?Sized)) -> Self {
         Timestamp(clock.now_timestamp())
     }
 
