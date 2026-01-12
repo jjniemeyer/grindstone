@@ -88,9 +88,9 @@ pub fn render_timer(frame: &mut Frame, area: Rect, app: &App) {
     let controls = if app.timer.phase.is_break() {
         "[s] Skip Break  [p] Pause  [r] Reset  [n] New Session"
     } else if app.timer.is_running() {
-        "[p] Pause  [r] Reset"
+        "[p] Pause  [x] Stop  [r] Reset"
     } else if app.timer.is_paused() {
-        "[s] Resume  [r] Reset"
+        "[s] Resume  [x] Stop  [r] Reset"
     } else {
         "[s] Start  [n] New Session"
     };

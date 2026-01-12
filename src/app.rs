@@ -412,6 +412,11 @@ impl App {
             KeyCode::Char('r') => {
                 self.timer.reset();
             }
+            KeyCode::Char('x') => {
+                if self.timer.is_running() || self.timer.is_paused() {
+                    self.stop_session();
+                }
+            }
             KeyCode::Char('n') => {
                 self.modal = ModalState::Input;
                 self.input.field = InputField::Name;
@@ -973,7 +978,9 @@ impl App {
                 let end_time = Timestamp::from_clock(&*self.clock);
                 session.started_at = start_time;
                 session.ended_at = end_time;
-                session.duration_secs = end_time - start_time;
+                // Use configured work duration, not wall-clock time
+                session.duration_secs =
+                    DurationSecs::new(self.timer.work_duration.as_secs() as i64);
 
                 if let Some(ref db) = self.db
                     && let Err(e) = db.save_session(&session)
@@ -983,6 +990,43 @@ impl App {
                 }
 
                 SessionPhase::Ready(session)
+            }
+            other => other,
+        };
+    }
+
+    /// Stop the current session early and save actual elapsed time
+    fn stop_session(&mut self) {
+        if !matches!(self.session_phase, SessionPhase::Active { .. }) {
+            return;
+        }
+
+        let elapsed_secs = self.timer.elapsed().as_secs() as i64;
+        if elapsed_secs == 0 {
+            return;
+        }
+
+        let phase = std::mem::take(&mut self.session_phase);
+
+        self.session_phase = match phase {
+            SessionPhase::Active {
+                mut session,
+                start_time,
+            } => {
+                let end_time = Timestamp::from_clock(&*self.clock);
+                session.started_at = start_time;
+                session.ended_at = end_time;
+                session.duration_secs = DurationSecs::new(elapsed_secs);
+
+                if let Some(ref db) = self.db
+                    && let Err(e) = db.save_session(&session)
+                {
+                    error!("Failed to save session: {}", e);
+                    self.notify(NotificationLevel::Error, "Failed to save session!");
+                }
+
+                self.timer.reset();
+                SessionPhase::Inactive
             }
             other => other,
         };
