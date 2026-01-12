@@ -61,10 +61,12 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
         SettingsMode::Categories => Line::from(vec![
             Span::styled("[n]", Style::default().bold()),
             Span::raw(" New  "),
+            Span::styled("[e]", Style::default().bold()),
+            Span::raw(" Edit  "),
             Span::styled("[d]", Style::default().bold()),
             Span::raw(" Delete  "),
             Span::styled("[j/k]", Style::default().bold()),
-            Span::raw(" Navigate  "),
+            Span::raw(" Nav  "),
             Span::styled("[1/2]", Style::default().bold()),
             Span::raw(" Mode  "),
             Span::styled("[Esc]", Style::default().bold()),
@@ -225,8 +227,13 @@ fn render_category_form(frame: &mut Frame, area: Rect, app: &App) {
     .split(area);
 
     // Title
+    let title = if app.settings.editing_category_id.is_some() {
+        "Edit Category"
+    } else {
+        "New Category"
+    };
     frame.render_widget(
-        Paragraph::new("New Category").centered().bold(),
+        Paragraph::new(title).centered().bold(),
         chunks[0],
     );
 
@@ -280,8 +287,13 @@ fn render_category_form(frame: &mut Frame, area: Rect, app: &App) {
     );
 
     // Controls
+    let action = if app.settings.editing_category_id.is_some() {
+        "Save"
+    } else {
+        "Create"
+    };
     frame.render_widget(
-        Paragraph::new("[Tab] Switch field  [Enter] Create  [Esc] Cancel")
+        Paragraph::new(format!("[Tab] Switch field  [Enter] {}  [Esc] Cancel", action))
             .centered()
             .dark_gray(),
         chunks[5],
