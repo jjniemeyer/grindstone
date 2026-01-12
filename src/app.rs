@@ -1011,6 +1011,167 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::style::Color;
+    use std::cell::RefCell;
+
+    /// Mock database for testing App without real database
+    struct MockDatabase {
+        categories: RefCell<Vec<Category>>,
+        sessions: RefCell<Vec<Session>>,
+        config: RefCell<Config>,
+        next_session_id: RefCell<i64>,
+        next_category_id: RefCell<i64>,
+    }
+
+    impl MockDatabase {
+        fn new() -> Self {
+            Self {
+                categories: RefCell::new(vec![Category {
+                    id: None,
+                    name: "Default".to_string(),
+                    color: Color::Gray,
+                }]),
+                sessions: RefCell::new(Vec::new()),
+                config: RefCell::new(Config::default()),
+                next_session_id: RefCell::new(1),
+                next_category_id: RefCell::new(1),
+            }
+        }
+    }
+
+    impl DatabaseOps for MockDatabase {
+        fn save_session(
+            &self,
+            session: &Session,
+        ) -> crate::error::Result<crate::models::SessionId> {
+            let mut sessions = self.sessions.borrow_mut();
+            let mut next_id = self.next_session_id.borrow_mut();
+            let id = crate::models::SessionId::from(*next_id);
+            *next_id += 1;
+            let mut session = session.clone();
+            session.id = Some(id);
+            sessions.push(session);
+            Ok(id)
+        }
+
+        fn delete_session(&self, id: crate::models::SessionId) -> crate::error::Result<usize> {
+            let mut sessions = self.sessions.borrow_mut();
+            let len_before = sessions.len();
+            sessions.retain(|s| s.id != Some(id));
+            Ok(len_before - sessions.len())
+        }
+
+        fn get_sessions_in_range(
+            &self,
+            start: i64,
+            end: i64,
+        ) -> crate::error::Result<Vec<Session>> {
+            let sessions = self.sessions.borrow();
+            Ok(sessions
+                .iter()
+                .filter(|s| {
+                    let ts: i64 = s.started_at.into();
+                    ts >= start && ts <= end
+                })
+                .cloned()
+                .collect())
+        }
+
+        fn get_time_by_category(
+            &self,
+            _start: i64,
+            _end: i64,
+        ) -> crate::error::Result<Vec<crate::models::CategoryStat>> {
+            Ok(Vec::new())
+        }
+
+        fn get_categories(&self) -> crate::error::Result<Vec<Category>> {
+            Ok(self.categories.borrow().clone())
+        }
+
+        fn create_category(
+            &self,
+            name: &str,
+            color: Color,
+        ) -> crate::error::Result<crate::models::CategoryId> {
+            let mut categories = self.categories.borrow_mut();
+            let mut next_id = self.next_category_id.borrow_mut();
+            let id = crate::models::CategoryId::from(*next_id);
+            *next_id += 1;
+            categories.push(Category {
+                id: Some(id),
+                name: name.to_string(),
+                color,
+            });
+            Ok(id)
+        }
+
+        fn delete_category(&self, id: crate::models::CategoryId) -> crate::error::Result<usize> {
+            let mut categories = self.categories.borrow_mut();
+            let len_before = categories.len();
+            categories.retain(|c| c.id != Some(id));
+            Ok(len_before - categories.len())
+        }
+
+        fn update_category(
+            &self,
+            id: crate::models::CategoryId,
+            name: &str,
+            color: Color,
+        ) -> crate::error::Result<usize> {
+            let mut categories = self.categories.borrow_mut();
+            for cat in categories.iter_mut() {
+                if cat.id == Some(id) {
+                    cat.name = name.to_string();
+                    cat.color = color;
+                    return Ok(1);
+                }
+            }
+            Ok(0)
+        }
+
+        fn is_category_in_use(&self, name: &str) -> crate::error::Result<bool> {
+            let sessions = self.sessions.borrow();
+            Ok(sessions.iter().any(|s| s.category == name))
+        }
+
+        fn get_config(&self) -> crate::error::Result<Config> {
+            Ok(self.config.borrow().clone())
+        }
+
+        fn save_config(&self, config: &Config) -> crate::error::Result<()> {
+            *self.config.borrow_mut() = config.clone();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_app_with_mock_database() {
+        let mut app = App::default();
+        let mock_db = MockDatabase::new();
+        app.db = Some(Box::new(mock_db));
+
+        // App should work with mock database
+        app.refresh_data();
+        app.refresh_categories();
+        assert!(!app.data.categories.is_empty());
+    }
+
+    #[test]
+    fn test_save_config_with_mock_database() {
+        let mut app = App::default();
+        let mock_db = MockDatabase::new();
+        app.db = Some(Box::new(mock_db));
+
+        // Modify config through settings flow
+        app.settings.editing_config = app.data.config.clone();
+        app.settings.editing_config.work_duration_secs = 30 * 60;
+        app.settings.field = SettingsField::WorkDuration;
+        app.settings.editing_value = "30".to_string();
+        app.save_settings();
+
+        assert_eq!(app.data.config.work_duration_secs, 30 * 60);
+    }
 
     #[test]
     fn test_settings_editing_buffer_isolation() {
