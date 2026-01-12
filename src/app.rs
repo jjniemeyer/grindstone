@@ -859,6 +859,15 @@ impl App {
         // Apply the current field's value to editing_config
         self.apply_editing_value();
 
+        // Validate config before saving
+        if !self.settings.editing_config.is_valid() {
+            self.notify(
+                NotificationLevel::Warning,
+                "Invalid settings: all values must be positive",
+            );
+            return;
+        }
+
         // Commit editing_config to config
         self.data.config = self.settings.editing_config.clone();
 

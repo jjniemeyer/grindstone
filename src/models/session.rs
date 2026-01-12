@@ -395,6 +395,14 @@ impl Config {
     pub const DEFAULT_SHORT_BREAK_SECS: i64 = 5 * 60;
     pub const DEFAULT_LONG_BREAK_SECS: i64 = 15 * 60;
     pub const DEFAULT_SESSIONS_UNTIL_LONG: i64 = 4;
+
+    /// Check if all config values are valid (positive durations)
+    pub fn is_valid(&self) -> bool {
+        self.work_duration_secs > 0
+            && self.short_break_secs > 0
+            && self.long_break_secs > 0
+            && self.sessions_until_long_break > 0
+    }
 }
 
 impl Default for Config {
@@ -545,5 +553,57 @@ mod tests {
         assert_eq!(config.short_break_secs, 600);
         assert_eq!(config.long_break_secs, 1200);
         assert_eq!(config.sessions_until_long_break, 3);
+    }
+
+    #[test]
+    fn test_config_is_valid() {
+        let config = Config::default();
+        assert!(config.is_valid());
+
+        let valid = Config {
+            work_duration_secs: 1,
+            short_break_secs: 1,
+            long_break_secs: 1,
+            sessions_until_long_break: 1,
+        };
+        assert!(valid.is_valid());
+    }
+
+    #[test]
+    fn test_config_is_invalid_zero() {
+        let zero_work = Config {
+            work_duration_secs: 0,
+            ..Config::default()
+        };
+        assert!(!zero_work.is_valid());
+
+        let zero_short = Config {
+            short_break_secs: 0,
+            ..Config::default()
+        };
+        assert!(!zero_short.is_valid());
+
+        let zero_long = Config {
+            long_break_secs: 0,
+            ..Config::default()
+        };
+        assert!(!zero_long.is_valid());
+
+        let zero_sessions = Config {
+            sessions_until_long_break: 0,
+            ..Config::default()
+        };
+        assert!(!zero_sessions.is_valid());
+    }
+
+    #[test]
+    fn test_config_is_invalid_negative() {
+        let negative = Config {
+            work_duration_secs: -1,
+            short_break_secs: 5 * 60,
+            long_break_secs: 15 * 60,
+            sessions_until_long_break: 4,
+        };
+        assert!(!negative.is_valid());
     }
 }
