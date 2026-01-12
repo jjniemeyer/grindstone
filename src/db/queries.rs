@@ -1,6 +1,10 @@
+use ratatui::style::Color;
 use rusqlite::{Connection, params};
 
-use crate::models::{parse_hex_color, Category, CategoryStat, Config, Session, SessionId};
+use crate::models::{
+    format_hex_color, parse_hex_color, Category, CategoryId, CategoryStat, Config, Session,
+    SessionId,
+};
 
 /// Save a session to the database
 pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<SessionId> {
@@ -90,6 +94,31 @@ pub fn get_categories(conn: &Connection) -> rusqlite::Result<Vec<Category>> {
 /// Delete a session by ID
 pub fn delete_session(conn: &Connection, id: SessionId) -> rusqlite::Result<usize> {
     conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])
+}
+
+/// Create a new category
+pub fn create_category(conn: &Connection, name: &str, color: Color) -> rusqlite::Result<CategoryId> {
+    let color_hex = format_hex_color(color);
+    conn.execute(
+        "INSERT INTO categories (name, color) VALUES (?1, ?2)",
+        params![name, color_hex],
+    )?;
+    Ok(CategoryId::from(conn.last_insert_rowid()))
+}
+
+/// Delete a category by ID
+pub fn delete_category(conn: &Connection, id: CategoryId) -> rusqlite::Result<usize> {
+    conn.execute("DELETE FROM categories WHERE id = ?1", params![id])
+}
+
+/// Check if a category is in use by any session
+pub fn is_category_in_use(conn: &Connection, name: &str) -> rusqlite::Result<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sessions WHERE category = ?1",
+        params![name],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
 }
 
 /// Get timer configuration from database
