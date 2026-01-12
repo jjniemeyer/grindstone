@@ -386,3 +386,74 @@ impl Default for Config {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bounded_string_max_length() {
+        let mut s: BoundedString<5> = BoundedString::default();
+        s.push('a');
+        s.push('b');
+        s.push('c');
+        s.push('d');
+        s.push('e');
+        s.push('f'); // Should be ignored
+        assert_eq!(s.to_string(), "abcde");
+    }
+
+    #[test]
+    fn test_bounded_string_empty() {
+        let s: BoundedString<10> = BoundedString::default();
+        assert!(s.is_empty());
+        assert_eq!(s.to_string(), "");
+    }
+
+    #[test]
+    fn test_bounded_string_pop() {
+        let mut s: BoundedString<10> = BoundedString::default();
+        s.push('a');
+        s.push('b');
+        assert_eq!(s.pop(), Some('b'));
+        assert_eq!(s.to_string(), "a");
+    }
+
+    #[test]
+    fn test_bounded_string_clear() {
+        let mut s: BoundedString<10> = BoundedString::default();
+        s.push('a');
+        s.push('b');
+        s.clear();
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn test_bounded_string_utf8_boundary() {
+        // Multi-byte character: é is 2 bytes in UTF-8
+        let mut s: BoundedString<3> = BoundedString::default();
+        s.push('a'); // 1 byte, total 1
+        s.push('é'); // 2 bytes, total 3
+        s.push('b'); // Would exceed 3 bytes, ignored
+        assert_eq!(s.to_string(), "aé");
+    }
+
+    #[test]
+    fn test_bounded_string_emoji() {
+        // Emoji: 🎉 is 4 bytes in UTF-8
+        let mut s: BoundedString<4> = BoundedString::default();
+        s.push('🎉'); // 4 bytes, fits exactly
+        s.push('a'); // Would exceed, ignored
+        assert_eq!(s.to_string(), "🎉");
+    }
+
+    #[test]
+    fn test_bounded_string_whitespace_only() {
+        let mut s: BoundedString<10> = BoundedString::default();
+        s.push(' ');
+        s.push(' ');
+        s.push(' ');
+        assert!(!s.is_empty()); // is_empty only checks length, not content
+        assert_eq!(s.to_string().trim(), "");
+    }
+}
