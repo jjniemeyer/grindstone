@@ -1,4 +1,5 @@
 mod app;
+mod clock;
 mod config;
 mod db;
 mod error;
