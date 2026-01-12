@@ -47,8 +47,8 @@ pub struct PomodoroTimer {
     pub work_duration: Duration,
     pub short_break: Duration,
     pub long_break: Duration,
-    pub sessions_until_long: u8,
-    pub sessions_completed: u8,
+    pub sessions_until_long: u32,
+    pub sessions_completed: u32,
 }
 
 impl Default for PomodoroTimer {
@@ -60,7 +60,7 @@ impl Default for PomodoroTimer {
             work_duration: Duration::from_secs(config.work_duration_secs as u64),
             short_break: Duration::from_secs(config.short_break_secs as u64),
             long_break: Duration::from_secs(config.long_break_secs as u64),
-            sessions_until_long: config.sessions_until_long_break as u8,
+            sessions_until_long: config.sessions_until_long_break as u32,
             sessions_completed: 0,
         }
     }
@@ -185,7 +185,7 @@ impl PomodoroTimer {
         self.work_duration = Duration::from_secs(config.work_duration_secs as u64);
         self.short_break = Duration::from_secs(config.short_break_secs as u64);
         self.long_break = Duration::from_secs(config.long_break_secs as u64);
-        self.sessions_until_long = config.sessions_until_long_break as u8;
+        self.sessions_until_long = config.sessions_until_long_break as u32;
     }
 
     /// Get the progress as a ratio (0.0 to 1.0)
@@ -263,5 +263,47 @@ mod tests {
         timer.advance_phase(); // 4th work session complete
         assert_eq!(timer.phase, TimerPhase::LongBreak);
         assert_eq!(timer.sessions_completed, 0);
+    }
+
+    #[test]
+    fn test_sessions_completed_with_threshold_one() {
+        let mut timer = PomodoroTimer::new();
+        timer.sessions_until_long = 1;
+        timer.sessions_completed = 0;
+
+        // Every work session should trigger long break when threshold is 1
+        timer.advance_phase();
+        assert_eq!(timer.phase, TimerPhase::LongBreak);
+        assert_eq!(timer.sessions_completed, 0);
+    }
+
+    #[test]
+    fn test_zero_duration_work_phase() {
+        let mut timer = PomodoroTimer::new();
+        timer.work_duration = Duration::ZERO;
+
+        // Zero duration means immediately finished
+        assert!(timer.is_finished());
+        assert_eq!(timer.remaining(), Duration::ZERO);
+    }
+
+    #[test]
+    fn test_zero_duration_progress() {
+        let mut timer = PomodoroTimer::new();
+        timer.work_duration = Duration::ZERO;
+
+        // Progress should be 1.0 (100%) for zero duration to avoid division by zero
+        assert_eq!(timer.progress(), 1.0);
+    }
+
+    #[test]
+    fn test_zero_duration_break_phase() {
+        let mut timer = PomodoroTimer::new();
+        timer.short_break = Duration::ZERO;
+        timer.phase = TimerPhase::ShortBreak;
+
+        // Break with zero duration is also immediately finished
+        assert!(timer.is_finished());
+        assert_eq!(timer.progress(), 1.0);
     }
 }

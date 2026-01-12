@@ -3,8 +3,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use log::{error, warn};
 use ratatui::{DefaultTerminal, Frame, widgets::ListState};
 
+use crate::clock::{Clock, SystemClock};
 use crate::config::TICK_RATE;
-use crate::db::{self, Database};
+use crate::db::{Database, DatabaseOps};
 use crate::event::{AppEvent, poll_event};
 use crate::models::{
     BoundedString, Category, CategoryId, CategoryStat, Config, DurationSecs, Session, Timestamp,
@@ -12,6 +13,9 @@ use crate::models::{
 use crate::timer::PomodoroTimer;
 use crate::ui::{
     render_history, render_input_modal, render_settings_modal, render_stats, render_timer,
+};
+use crate::validation::{
+    validate_new_category_name, validate_session_name, validate_update_category_name,
 };
 
 /// The current view/screen
@@ -34,9 +38,9 @@ pub enum StatsPeriod {
 }
 
 impl StatsPeriod {
-    /// Get the start and end timestamps for this period
-    pub fn time_range(&self) -> (i64, i64) {
-        let now = Local::now();
+    /// Get the start and end timestamps for this period using a clock
+    pub fn time_range_with_clock(&self, clock: &dyn Clock) -> (i64, i64) {
+        let now = clock.now_datetime();
         let today_start = Local
             .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
             .unwrap();
@@ -233,7 +237,8 @@ pub struct App {
     pub settings: SettingsState,
     pub data: AppData,
     pub notification: Option<Notification>,
-    db: Option<Database>,
+    db: Option<Box<dyn DatabaseOps>>,
+    clock: Box<dyn Clock>,
 }
 
 impl Default for App {
@@ -256,6 +261,7 @@ impl Default for App {
             },
             notification: None,
             db: None,
+            clock: Box::new(SystemClock),
         }
     }
 }
@@ -268,20 +274,22 @@ impl App {
         // Open database and load data
         match Database::open() {
             Ok(database) => {
+                let db: Box<dyn DatabaseOps> = Box::new(database);
+
                 // Load categories
-                if let Ok(cats) = db::get_categories(&database.conn)
+                if let Ok(cats) = db.get_categories()
                     && !cats.is_empty()
                 {
                     app.data.categories = cats;
                 }
 
                 // Load config and apply to timer
-                if let Ok(config) = db::get_config(&database.conn) {
+                if let Ok(config) = db.get_config() {
                     app.timer.apply_config(&config);
                     app.data.config = config;
                 }
 
-                app.db = Some(database);
+                app.db = Some(db);
                 app.refresh_data();
             }
             Err(e) => {
@@ -449,7 +457,7 @@ impl App {
                     && let Some(id) = self.data.sessions[idx].id
                     && let Some(ref db) = self.db
                 {
-                    if let Err(e) = db::queries::delete_session(&db.conn, id) {
+                    if let Err(e) = db.delete_session(id) {
                         warn!("Failed to delete session: {}", e);
                         self.notify(NotificationLevel::Warning, "Failed to delete session");
                     }
@@ -485,7 +493,7 @@ impl App {
                 self.input.field = self.input.field.next();
             }
             KeyCode::Enter => {
-                if !self.input.name.is_empty() {
+                if validate_session_name(self.input.name.as_ref()) {
                     self.create_session();
                     self.modal = ModalState::None;
                     self.start_timer();
@@ -707,28 +715,37 @@ impl App {
         let name = self.settings.new_category_name.to_string();
         let color_str = self.settings.new_category_color.to_string();
 
-        if name.is_empty() {
-            self.notify(NotificationLevel::Warning, "Category name required");
-            return;
-        }
-
         // Parse color (use default if invalid)
         let color = crate::models::parse_hex_color(&color_str);
 
         if let Some(ref db) = self.db {
             let result = if let Some(id) = self.settings.editing_category_id {
+                // Validate for update - find current name to allow keeping it
+                let current_name = self
+                    .data
+                    .categories
+                    .iter()
+                    .find(|c| c.id == Some(id))
+                    .map(|c| c.name.as_str())
+                    .unwrap_or("");
+                if let Err(msg) =
+                    validate_update_category_name(&name, &self.data.categories, current_name)
+                {
+                    self.notify(NotificationLevel::Warning, msg);
+                    return;
+                }
                 // Update existing category
-                db::update_category(&db.conn, id, &name, color)
+                db.update_category(id, &name, color)
                     .map(|_| ())
                     .map_err(|e| e.to_string())
             } else {
-                // Check for duplicate name when creating
-                if self.data.categories.iter().any(|c| c.name == name) {
-                    self.notify(NotificationLevel::Warning, "Category already exists");
+                // Validate for create
+                if let Err(msg) = validate_new_category_name(&name, &self.data.categories) {
+                    self.notify(NotificationLevel::Warning, msg);
                     return;
                 }
                 // Create new category
-                db::create_category(&db.conn, &name, color)
+                db.create_category(&name, color)
                     .map(|_| ())
                     .map_err(|e| e.to_string())
             };
@@ -768,7 +785,7 @@ impl App {
 
         if let Some(ref db) = self.db {
             // Check if category is in use
-            match db::is_category_in_use(&db.conn, &category_name) {
+            match db.is_category_in_use(&category_name) {
                 Ok(true) => {
                     self.notify(
                         NotificationLevel::Warning,
@@ -784,7 +801,7 @@ impl App {
             }
 
             // Delete the category
-            match db::delete_category(&db.conn, category_id) {
+            match db.delete_category(category_id) {
                 Ok(_) => {
                     self.refresh_categories();
                     // Adjust selection if needed
@@ -805,7 +822,7 @@ impl App {
     /// Refresh categories from database
     fn refresh_categories(&mut self) {
         if let Some(ref db) = self.db
-            && let Ok(cats) = db::get_categories(&db.conn)
+            && let Ok(cats) = db.get_categories()
             && !cats.is_empty()
         {
             self.data.categories = cats;
@@ -859,6 +876,15 @@ impl App {
         // Apply the current field's value to editing_config
         self.apply_editing_value();
 
+        // Validate config before saving
+        if !self.settings.editing_config.is_valid() {
+            self.notify(
+                NotificationLevel::Warning,
+                "Invalid settings: all values must be positive",
+            );
+            return;
+        }
+
         // Commit editing_config to config
         self.data.config = self.settings.editing_config.clone();
 
@@ -867,7 +893,7 @@ impl App {
 
         // Save to database
         if let Some(ref db) = self.db
-            && let Err(e) = db::save_config(&db.conn, &self.data.config)
+            && let Err(e) = db.save_config(&self.data.config)
         {
             warn!("Failed to save config: {}", e);
             self.notify(NotificationLevel::Warning, "Failed to save settings");
@@ -899,11 +925,11 @@ impl App {
         self.session_phase = match phase {
             SessionPhase::Ready(session) => SessionPhase::Active {
                 session,
-                start_time: Timestamp::now(),
+                start_time: Timestamp::from_clock(&*self.clock),
             },
             SessionPhase::Active { session, .. } => SessionPhase::Active {
                 session,
-                start_time: Timestamp::now(),
+                start_time: Timestamp::from_clock(&*self.clock),
             },
             SessionPhase::Inactive => SessionPhase::Inactive,
         };
@@ -944,13 +970,13 @@ impl App {
                 mut session,
                 start_time,
             } => {
-                let end_time = Timestamp::now();
+                let end_time = Timestamp::from_clock(&*self.clock);
                 session.started_at = start_time;
                 session.ended_at = end_time;
                 session.duration_secs = end_time - start_time;
 
                 if let Some(ref db) = self.db
-                    && let Err(e) = db::save_session(&db.conn, &session)
+                    && let Err(e) = db.save_session(&session)
                 {
                     error!("Failed to save session: {}", e);
                     self.notify(NotificationLevel::Error, "Failed to save session!");
@@ -966,15 +992,15 @@ impl App {
     fn refresh_data(&mut self) {
         if let Some(ref db) = self.db {
             // Load sessions for history (last 30 days)
-            let now = Local::now().timestamp();
+            let now = self.clock.now_timestamp();
             let thirty_days_ago = now - (30 * 24 * 60 * 60);
-            if let Ok(sessions) = db::get_sessions_in_range(&db.conn, thirty_days_ago, now) {
+            if let Ok(sessions) = db.get_sessions_in_range(thirty_days_ago, now) {
                 self.data.sessions = sessions;
             }
 
             // Load category stats for current period
-            let (start, end) = self.data.stats_period.time_range();
-            if let Ok(stats) = db::get_time_by_category(&db.conn, start, end) {
+            let (start, end) = self.data.stats_period.time_range_with_clock(&*self.clock);
+            if let Ok(stats) = db.get_time_by_category(start, end) {
                 self.data.category_stats = stats;
             }
         }
@@ -997,6 +1023,167 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::style::Color;
+    use std::cell::RefCell;
+
+    /// Mock database for testing App without real database
+    struct MockDatabase {
+        categories: RefCell<Vec<Category>>,
+        sessions: RefCell<Vec<Session>>,
+        config: RefCell<Config>,
+        next_session_id: RefCell<i64>,
+        next_category_id: RefCell<i64>,
+    }
+
+    impl MockDatabase {
+        fn new() -> Self {
+            Self {
+                categories: RefCell::new(vec![Category {
+                    id: None,
+                    name: "Default".to_string(),
+                    color: Color::Gray,
+                }]),
+                sessions: RefCell::new(Vec::new()),
+                config: RefCell::new(Config::default()),
+                next_session_id: RefCell::new(1),
+                next_category_id: RefCell::new(1),
+            }
+        }
+    }
+
+    impl DatabaseOps for MockDatabase {
+        fn save_session(
+            &self,
+            session: &Session,
+        ) -> crate::error::Result<crate::models::SessionId> {
+            let mut sessions = self.sessions.borrow_mut();
+            let mut next_id = self.next_session_id.borrow_mut();
+            let id = crate::models::SessionId::from(*next_id);
+            *next_id += 1;
+            let mut session = session.clone();
+            session.id = Some(id);
+            sessions.push(session);
+            Ok(id)
+        }
+
+        fn delete_session(&self, id: crate::models::SessionId) -> crate::error::Result<usize> {
+            let mut sessions = self.sessions.borrow_mut();
+            let len_before = sessions.len();
+            sessions.retain(|s| s.id != Some(id));
+            Ok(len_before - sessions.len())
+        }
+
+        fn get_sessions_in_range(
+            &self,
+            start: i64,
+            end: i64,
+        ) -> crate::error::Result<Vec<Session>> {
+            let sessions = self.sessions.borrow();
+            Ok(sessions
+                .iter()
+                .filter(|s| {
+                    let ts: i64 = s.started_at.into();
+                    ts >= start && ts <= end
+                })
+                .cloned()
+                .collect())
+        }
+
+        fn get_time_by_category(
+            &self,
+            _start: i64,
+            _end: i64,
+        ) -> crate::error::Result<Vec<crate::models::CategoryStat>> {
+            Ok(Vec::new())
+        }
+
+        fn get_categories(&self) -> crate::error::Result<Vec<Category>> {
+            Ok(self.categories.borrow().clone())
+        }
+
+        fn create_category(
+            &self,
+            name: &str,
+            color: Color,
+        ) -> crate::error::Result<crate::models::CategoryId> {
+            let mut categories = self.categories.borrow_mut();
+            let mut next_id = self.next_category_id.borrow_mut();
+            let id = crate::models::CategoryId::from(*next_id);
+            *next_id += 1;
+            categories.push(Category {
+                id: Some(id),
+                name: name.to_string(),
+                color,
+            });
+            Ok(id)
+        }
+
+        fn delete_category(&self, id: crate::models::CategoryId) -> crate::error::Result<usize> {
+            let mut categories = self.categories.borrow_mut();
+            let len_before = categories.len();
+            categories.retain(|c| c.id != Some(id));
+            Ok(len_before - categories.len())
+        }
+
+        fn update_category(
+            &self,
+            id: crate::models::CategoryId,
+            name: &str,
+            color: Color,
+        ) -> crate::error::Result<usize> {
+            let mut categories = self.categories.borrow_mut();
+            for cat in categories.iter_mut() {
+                if cat.id == Some(id) {
+                    cat.name = name.to_string();
+                    cat.color = color;
+                    return Ok(1);
+                }
+            }
+            Ok(0)
+        }
+
+        fn is_category_in_use(&self, name: &str) -> crate::error::Result<bool> {
+            let sessions = self.sessions.borrow();
+            Ok(sessions.iter().any(|s| s.category == name))
+        }
+
+        fn get_config(&self) -> crate::error::Result<Config> {
+            Ok(self.config.borrow().clone())
+        }
+
+        fn save_config(&self, config: &Config) -> crate::error::Result<()> {
+            *self.config.borrow_mut() = config.clone();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_app_with_mock_database() {
+        let mut app = App::default();
+        let mock_db = MockDatabase::new();
+        app.db = Some(Box::new(mock_db));
+
+        // App should work with mock database
+        app.refresh_data();
+        app.refresh_categories();
+        assert!(!app.data.categories.is_empty());
+    }
+
+    #[test]
+    fn test_save_config_with_mock_database() {
+        let mut app = App::default();
+        let mock_db = MockDatabase::new();
+        app.db = Some(Box::new(mock_db));
+
+        // Modify config through settings flow
+        app.settings.editing_config = app.data.config.clone();
+        app.settings.editing_config.work_duration_secs = 30 * 60;
+        app.settings.field = SettingsField::WorkDuration;
+        app.settings.editing_value = "30".to_string();
+        app.save_settings();
+
+        assert_eq!(app.data.config.work_duration_secs, 30 * 60);
+    }
 
     #[test]
     fn test_settings_editing_buffer_isolation() {

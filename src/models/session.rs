@@ -2,12 +2,30 @@ use chrono::{DateTime, Local};
 use ratatui::style::Color;
 use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
+use crate::clock::Clock;
+
 /// A string with a maximum length enforced at runtime.
 /// Silently ignores characters that would exceed the limit.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BoundedString<const MAX: usize>(String);
 
 impl<const MAX: usize> BoundedString<MAX> {
+    /// Create from a string, truncating to fit within MAX bytes.
+    /// Truncation respects UTF-8 character boundaries.
+    pub fn from_string(s: impl Into<String>) -> Self {
+        let s = s.into();
+        if s.len() <= MAX {
+            BoundedString(s)
+        } else {
+            // Find the last valid UTF-8 boundary within MAX bytes
+            let mut end = MAX;
+            while end > 0 && !s.is_char_boundary(end) {
+                end -= 1;
+            }
+            BoundedString(s[..end].to_string())
+        }
+    }
+
     pub fn push(&mut self, c: char) {
         if self.0.len() + c.len_utf8() <= MAX {
             self.0.push(c);
@@ -22,6 +40,11 @@ impl<const MAX: usize> BoundedString<MAX> {
         self.0.is_empty()
     }
 
+    /// Check if the string is blank (empty or contains only whitespace)
+    pub fn is_blank(&self) -> bool {
+        self.0.trim().is_empty()
+    }
+
     pub fn clear(&mut self) {
         self.0.clear()
     }
@@ -30,6 +53,12 @@ impl<const MAX: usize> BoundedString<MAX> {
 impl<const MAX: usize> std::fmt::Display for BoundedString<MAX> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl<const MAX: usize> AsRef<str> for BoundedString<MAX> {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 
@@ -42,6 +71,13 @@ impl Timestamp {
         Timestamp(secs)
     }
 
+    /// Create a timestamp from the current time using a Clock
+    pub fn from_clock(clock: &(impl Clock + ?Sized)) -> Self {
+        Timestamp(clock.now_timestamp())
+    }
+
+    /// Create a timestamp from the current system time
+    /// Prefer `from_clock` for testability
     pub fn now() -> Self {
         Timestamp(Local::now().timestamp())
     }
@@ -374,6 +410,14 @@ impl Config {
     pub const DEFAULT_SHORT_BREAK_SECS: i64 = 5 * 60;
     pub const DEFAULT_LONG_BREAK_SECS: i64 = 15 * 60;
     pub const DEFAULT_SESSIONS_UNTIL_LONG: i64 = 4;
+
+    /// Check if all config values are valid (positive durations)
+    pub fn is_valid(&self) -> bool {
+        self.work_duration_secs > 0
+            && self.short_break_secs > 0
+            && self.long_break_secs > 0
+            && self.sessions_until_long_break > 0
+    }
 }
 
 impl Default for Config {
@@ -384,5 +428,210 @@ impl Default for Config {
             long_break_secs: Self::DEFAULT_LONG_BREAK_SECS,
             sessions_until_long_break: Self::DEFAULT_SESSIONS_UNTIL_LONG,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bounded_string_max_length() {
+        let mut s: BoundedString<5> = BoundedString::default();
+        s.push('a');
+        s.push('b');
+        s.push('c');
+        s.push('d');
+        s.push('e');
+        s.push('f'); // Should be ignored
+        assert_eq!(s.to_string(), "abcde");
+    }
+
+    #[test]
+    fn test_bounded_string_empty() {
+        let s: BoundedString<10> = BoundedString::default();
+        assert!(s.is_empty());
+        assert_eq!(s.to_string(), "");
+    }
+
+    #[test]
+    fn test_bounded_string_pop() {
+        let mut s: BoundedString<10> = BoundedString::default();
+        s.push('a');
+        s.push('b');
+        assert_eq!(s.pop(), Some('b'));
+        assert_eq!(s.to_string(), "a");
+    }
+
+    #[test]
+    fn test_bounded_string_clear() {
+        let mut s: BoundedString<10> = BoundedString::default();
+        s.push('a');
+        s.push('b');
+        s.clear();
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn test_bounded_string_utf8_boundary() {
+        // Multi-byte character: é is 2 bytes in UTF-8
+        let mut s: BoundedString<3> = BoundedString::default();
+        s.push('a'); // 1 byte, total 1
+        s.push('é'); // 2 bytes, total 3
+        s.push('b'); // Would exceed 3 bytes, ignored
+        assert_eq!(s.to_string(), "aé");
+    }
+
+    #[test]
+    fn test_bounded_string_emoji() {
+        // Emoji: 🎉 is 4 bytes in UTF-8
+        let mut s: BoundedString<4> = BoundedString::default();
+        s.push('🎉'); // 4 bytes, fits exactly
+        s.push('a'); // Would exceed, ignored
+        assert_eq!(s.to_string(), "🎉");
+    }
+
+    #[test]
+    fn test_bounded_string_whitespace_only() {
+        let mut s: BoundedString<10> = BoundedString::default();
+        s.push(' ');
+        s.push(' ');
+        s.push(' ');
+        assert!(!s.is_empty()); // is_empty only checks length, not content
+        assert!(s.is_blank()); // is_blank checks for whitespace-only
+    }
+
+    #[test]
+    fn test_bounded_string_is_blank() {
+        let empty: BoundedString<10> = BoundedString::default();
+        assert!(empty.is_blank());
+
+        let whitespace: BoundedString<10> = BoundedString::from_string("   ");
+        assert!(whitespace.is_blank());
+
+        let content: BoundedString<10> = BoundedString::from_string("hello");
+        assert!(!content.is_blank());
+
+        let mixed: BoundedString<10> = BoundedString::from_string("  hi  ");
+        assert!(!mixed.is_blank());
+    }
+
+    #[test]
+    fn test_bounded_string_from_string() {
+        let s: BoundedString<5> = BoundedString::from_string("abc");
+        assert_eq!(s.to_string(), "abc");
+
+        let s: BoundedString<5> = BoundedString::from_string("abcdefgh");
+        assert_eq!(s.to_string(), "abcde");
+    }
+
+    #[test]
+    fn test_bounded_string_from_string_utf8_truncation() {
+        // "héllo" - é is 2 bytes, so "héll" is 5 bytes
+        let s: BoundedString<5> = BoundedString::from_string("héllo");
+        assert_eq!(s.to_string(), "héll");
+
+        // Truncating in the middle of a multi-byte character
+        let s: BoundedString<2> = BoundedString::from_string("é"); // é is 2 bytes
+        assert_eq!(s.to_string(), "é");
+
+        let s: BoundedString<1> = BoundedString::from_string("é"); // Can't fit, truncates to empty
+        assert_eq!(s.to_string(), "");
+    }
+
+    #[test]
+    fn test_config_default_values() {
+        let config = Config::default();
+        assert_eq!(config.work_duration_secs, 25 * 60);
+        assert_eq!(config.short_break_secs, 5 * 60);
+        assert_eq!(config.long_break_secs, 15 * 60);
+        assert_eq!(config.sessions_until_long_break, 4);
+    }
+
+    #[test]
+    fn test_config_constants() {
+        assert_eq!(Config::DEFAULT_WORK_SECS, 1500);
+        assert_eq!(Config::DEFAULT_SHORT_BREAK_SECS, 300);
+        assert_eq!(Config::DEFAULT_LONG_BREAK_SECS, 900);
+        assert_eq!(Config::DEFAULT_SESSIONS_UNTIL_LONG, 4);
+    }
+
+    #[test]
+    fn test_config_custom_values() {
+        let config = Config {
+            work_duration_secs: 30 * 60,
+            short_break_secs: 10 * 60,
+            long_break_secs: 20 * 60,
+            sessions_until_long_break: 3,
+        };
+        assert_eq!(config.work_duration_secs, 1800);
+        assert_eq!(config.short_break_secs, 600);
+        assert_eq!(config.long_break_secs, 1200);
+        assert_eq!(config.sessions_until_long_break, 3);
+    }
+
+    #[test]
+    fn test_config_is_valid() {
+        let config = Config::default();
+        assert!(config.is_valid());
+
+        let valid = Config {
+            work_duration_secs: 1,
+            short_break_secs: 1,
+            long_break_secs: 1,
+            sessions_until_long_break: 1,
+        };
+        assert!(valid.is_valid());
+    }
+
+    #[test]
+    fn test_config_is_invalid_zero() {
+        let zero_work = Config {
+            work_duration_secs: 0,
+            ..Config::default()
+        };
+        assert!(!zero_work.is_valid());
+
+        let zero_short = Config {
+            short_break_secs: 0,
+            ..Config::default()
+        };
+        assert!(!zero_short.is_valid());
+
+        let zero_long = Config {
+            long_break_secs: 0,
+            ..Config::default()
+        };
+        assert!(!zero_long.is_valid());
+
+        let zero_sessions = Config {
+            sessions_until_long_break: 0,
+            ..Config::default()
+        };
+        assert!(!zero_sessions.is_valid());
+    }
+
+    #[test]
+    fn test_config_is_invalid_negative() {
+        let negative = Config {
+            work_duration_secs: -1,
+            short_break_secs: 5 * 60,
+            long_break_secs: 15 * 60,
+            sessions_until_long_break: 4,
+        };
+        assert!(!negative.is_valid());
+    }
+
+    #[test]
+    fn test_timestamp_from_clock() {
+        use crate::clock::SystemClock;
+
+        let clock = SystemClock;
+        let ts = Timestamp::from_clock(&clock);
+        let now = Timestamp::now();
+
+        // Both should be within 1 second of each other
+        let diff = (i64::from(ts) - i64::from(now)).abs();
+        assert!(diff <= 1);
     }
 }

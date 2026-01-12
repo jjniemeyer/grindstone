@@ -1,4 +1,5 @@
 mod app;
+mod clock;
 mod config;
 mod db;
 mod error;
@@ -6,6 +7,7 @@ mod event;
 mod models;
 mod timer;
 mod ui;
+mod validation;
 
 use app::App;
 use log::LevelFilter;
