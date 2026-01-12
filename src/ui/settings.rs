@@ -42,7 +42,7 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
 
     // Helper to render a settings row
     let render_row = |field: SettingsField, label: &str, value: i64, unit: &str| {
-        let is_selected = app.settings_field == field;
+        let is_selected = app.settings.field == field;
         let style = if is_selected {
             Style::default().fg(Color::Yellow).bold()
         } else {
@@ -50,7 +50,7 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
         };
 
         let value_text = if is_selected {
-            format!("{}_", app.settings_editing_value)
+            format!("{}_", app.settings.editing_value)
         } else {
             format_duration_value(field, value)
         };
@@ -66,7 +66,7 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
         Paragraph::new(render_row(
             SettingsField::WorkDuration,
             "Work Duration:",
-            app.editing_config.work_duration_secs,
+            app.settings.editing_config.work_duration_secs,
             "min",
         )),
         chunks[0],
@@ -76,7 +76,7 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
         Paragraph::new(render_row(
             SettingsField::ShortBreak,
             "Short Break:",
-            app.editing_config.short_break_secs,
+            app.settings.editing_config.short_break_secs,
             "min",
         )),
         chunks[1],
@@ -86,7 +86,7 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
         Paragraph::new(render_row(
             SettingsField::LongBreak,
             "Long Break:",
-            app.editing_config.long_break_secs,
+            app.settings.editing_config.long_break_secs,
             "min",
         )),
         chunks[2],
@@ -96,7 +96,7 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
         Paragraph::new(render_row(
             SettingsField::SessionsUntilLong,
             "Sessions until long break:",
-            app.editing_config.sessions_until_long_break,
+            app.settings.editing_config.sessions_until_long_break,
             "",
         )),
         chunks[3],

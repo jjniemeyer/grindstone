@@ -39,7 +39,7 @@ pub fn render_input_modal(frame: &mut Frame, area: Rect, app: &App) {
     .split(inner);
 
     // Name field
-    let name_style = if app.input_field == InputField::Name {
+    let name_style = if app.input.field == InputField::Name {
         Style::default().fg(Color::Yellow)
     } else {
         Style::default()
@@ -48,15 +48,15 @@ pub fn render_input_modal(frame: &mut Frame, area: Rect, app: &App) {
         .title("Name")
         .borders(Borders::ALL)
         .border_style(name_style);
-    let name_text = if app.input_field == InputField::Name {
-        format!("{}_", app.input_name)
+    let name_text = if app.input.field == InputField::Name {
+        format!("{}_", app.input.name)
     } else {
-        app.input_name.clone()
+        app.input.name.to_string()
     };
     frame.render_widget(Paragraph::new(name_text).block(name_block), chunks[0]);
 
     // Description field
-    let desc_style = if app.input_field == InputField::Description {
+    let desc_style = if app.input.field == InputField::Description {
         Style::default().fg(Color::Yellow)
     } else {
         Style::default()
@@ -65,15 +65,15 @@ pub fn render_input_modal(frame: &mut Frame, area: Rect, app: &App) {
         .title("Description (optional)")
         .borders(Borders::ALL)
         .border_style(desc_style);
-    let desc_text = if app.input_field == InputField::Description {
-        format!("{}_", app.input_description)
+    let desc_text = if app.input.field == InputField::Description {
+        format!("{}_", app.input.description)
     } else {
-        app.input_description.clone()
+        app.input.description.to_string()
     };
     frame.render_widget(Paragraph::new(desc_text).block(desc_block), chunks[1]);
 
     // Category selector
-    let cat_style = if app.input_field == InputField::Category {
+    let cat_style = if app.input.field == InputField::Category {
         Style::default().fg(Color::Yellow).bold()
     } else {
         Style::default()
@@ -81,7 +81,10 @@ pub fn render_input_modal(frame: &mut Frame, area: Rect, app: &App) {
     let category_line = Line::from(vec![
         Span::raw("Category: "),
         Span::styled("< ", Style::default().dark_gray()),
-        Span::styled(&app.categories[app.selected_category].name, cat_style),
+        Span::styled(
+            &app.data.categories[app.input.selected_category].name,
+            cat_style,
+        ),
         Span::styled(" >", Style::default().dark_gray()),
         Span::raw("  (←/→ to change)"),
     ]);

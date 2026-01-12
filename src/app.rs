@@ -5,7 +5,9 @@ use ratatui::{DefaultTerminal, Frame, widgets::ListState};
 use crate::config::TICK_RATE;
 use crate::db::{self, Database};
 use crate::event::{AppEvent, poll_event};
-use crate::models::{Category, Config, Session};
+use crate::models::{
+    BoundedString, Category, CategoryStat, Config, DurationSecs, Session, Timestamp,
+};
 use crate::timer::PomodoroTimer;
 use crate::ui::{
     render_history, render_input_modal, render_settings_modal, render_stats, render_timer,
@@ -108,6 +110,30 @@ pub enum SettingsField {
     SessionsUntilLong,
 }
 
+/// The current modal state - only one modal can be open at a time
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ModalState {
+    #[default]
+    None,
+    Input,
+    Settings,
+}
+
+/// The current session lifecycle state
+#[derive(Debug, Clone, Default)]
+pub enum SessionPhase {
+    /// No session created
+    #[default]
+    Inactive,
+    /// Session created but not currently in a work period
+    Ready(Session),
+    /// Session in active work period
+    Active {
+        session: Session,
+        start_time: Timestamp,
+    },
+}
+
 impl SettingsField {
     pub fn next(&self) -> Self {
         match self {
@@ -128,38 +154,44 @@ impl SettingsField {
     }
 }
 
+/// State for the input modal
+#[derive(Debug, Clone, Default)]
+pub struct InputState {
+    pub field: InputField,
+    pub name: BoundedString<100>,
+    pub description: BoundedString<500>,
+    pub selected_category: usize,
+}
+
+/// State for the settings modal
+#[derive(Debug, Clone, Default)]
+pub struct SettingsState {
+    pub field: SettingsField,
+    pub editing_value: String,
+    pub editing_config: Config,
+}
+
+/// Persisted application data
+#[derive(Debug, Clone, Default)]
+pub struct AppData {
+    pub categories: Vec<Category>,
+    pub config: Config,
+    pub sessions: Vec<Session>,
+    pub history_state: ListState,
+    pub stats_period: StatsPeriod,
+    pub category_stats: Vec<CategoryStat>,
+}
+
 /// The main application state
 pub struct App {
     pub running: bool,
     pub view: View,
-    pub show_input_modal: bool,
-    pub show_settings_modal: bool,
+    pub modal: ModalState,
     pub timer: PomodoroTimer,
-    pub current_session: Option<Session>,
-    pub session_start_time: Option<i64>,
-
-    // Input modal state
-    pub input_field: InputField,
-    pub input_name: String,
-    pub input_description: String,
-    pub selected_category: usize,
-    pub categories: Vec<Category>,
-
-    // Settings modal state
-    pub settings_field: SettingsField,
-    pub settings_editing_value: String,
-    pub config: Config,
-    pub editing_config: Config,
-
-    // History view state
-    pub sessions: Vec<Session>,
-    pub history_state: ListState,
-
-    // Stats view state
-    pub stats_period: StatsPeriod,
-    pub category_stats: Vec<(String, i64)>,
-
-    // Database
+    pub session_phase: SessionPhase,
+    pub input: InputState,
+    pub settings: SettingsState,
+    pub data: AppData,
     db: Option<Database>,
 }
 
@@ -168,24 +200,19 @@ impl Default for App {
         Self {
             running: false,
             view: View::Timer,
-            show_input_modal: false,
-            show_settings_modal: false,
+            modal: ModalState::None,
             timer: PomodoroTimer::new(),
-            current_session: None,
-            session_start_time: None,
-            input_field: InputField::Name,
-            input_name: String::new(),
-            input_description: String::new(),
-            selected_category: 0,
-            categories: Category::defaults(),
-            settings_field: SettingsField::WorkDuration,
-            settings_editing_value: String::new(),
-            config: Config::default(),
-            editing_config: Config::default(),
-            sessions: Vec::new(),
-            history_state: ListState::default(),
-            stats_period: StatsPeriod::Day,
-            category_stats: Vec::new(),
+            session_phase: SessionPhase::Inactive,
+            input: InputState::default(),
+            settings: SettingsState::default(),
+            data: AppData {
+                categories: Category::defaults(),
+                config: Config::default(),
+                sessions: Vec::new(),
+                history_state: ListState::default(),
+                stats_period: StatsPeriod::Day,
+                category_stats: Vec::new(),
+            },
             db: None,
         }
     }
@@ -203,13 +230,13 @@ impl App {
                 if let Ok(cats) = db::get_categories(&database.conn)
                     && !cats.is_empty()
                 {
-                    app.categories = cats;
+                    app.data.categories = cats;
                 }
 
                 // Load config and apply to timer
                 if let Ok(config) = db::get_config(&database.conn) {
                     app.timer.apply_config(&config);
-                    app.config = config;
+                    app.data.config = config;
                 }
 
                 app.db = Some(database);
@@ -222,6 +249,19 @@ impl App {
         }
 
         Ok(app)
+    }
+
+    /// Get the current session, if any
+    pub fn current_session(&self) -> Option<&Session> {
+        match &self.session_phase {
+            SessionPhase::Ready(s) | SessionPhase::Active { session: s, .. } => Some(s),
+            SessionPhase::Inactive => None,
+        }
+    }
+
+    /// Check if a session exists (ready or active)
+    fn has_session(&self) -> bool {
+        !matches!(self.session_phase, SessionPhase::Inactive)
     }
 
     /// Run the application's main loop
@@ -252,25 +292,27 @@ impl App {
             View::Stats => render_stats(frame, area, self),
         }
 
-        // Render modals on top if visible
-        if self.show_input_modal {
-            render_input_modal(frame, area, self);
-        }
-        if self.show_settings_modal {
-            render_settings_modal(frame, area, self);
+        // Render modal on top if visible
+        match self.modal {
+            ModalState::None => {}
+            ModalState::Input => render_input_modal(frame, area, self),
+            ModalState::Settings => render_settings_modal(frame, area, self),
         }
     }
 
     /// Handle a key event
     fn handle_key_event(&mut self, key: KeyEvent) {
         // Handle modal input first
-        if self.show_settings_modal {
-            self.handle_settings_modal_key(key);
-            return;
-        }
-        if self.show_input_modal {
-            self.handle_input_modal_key(key);
-            return;
+        match self.modal {
+            ModalState::Settings => {
+                self.handle_settings_modal_key(key);
+                return;
+            }
+            ModalState::Input => {
+                self.handle_input_modal_key(key);
+                return;
+            }
+            ModalState::None => {}
         }
 
         // Global keys
@@ -305,7 +347,7 @@ impl App {
                     self.timer.skip_break();
                 } else if self.timer.is_paused() {
                     self.timer.start();
-                } else if self.timer.is_idle() && self.current_session.is_some() {
+                } else if self.timer.is_idle() && self.has_session() {
                     self.start_timer();
                 }
             }
@@ -318,17 +360,17 @@ impl App {
                 self.timer.reset();
             }
             KeyCode::Char('n') => {
-                self.show_input_modal = true;
-                self.input_field = InputField::Name;
-                self.input_name.clear();
-                self.input_description.clear();
-                self.selected_category = 0;
+                self.modal = ModalState::Input;
+                self.input.field = InputField::Name;
+                self.input.name.clear();
+                self.input.description.clear();
+                self.input.selected_category = 0;
             }
             KeyCode::Char('c') => {
-                self.show_settings_modal = true;
-                self.settings_field = SettingsField::WorkDuration;
-                self.editing_config = self.config.clone();
-                self.settings_editing_value = self.get_editing_field_value();
+                self.modal = ModalState::Settings;
+                self.settings.field = SettingsField::WorkDuration;
+                self.settings.editing_config = self.data.config.clone();
+                self.settings.editing_value = self.get_editing_field_value();
             }
             _ => {}
         }
@@ -338,30 +380,33 @@ impl App {
     fn handle_history_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                let len = self.sessions.len();
+                let len = self.data.sessions.len();
                 if len > 0 {
-                    let i = self.history_state.selected().map(|i| (i + 1) % len);
-                    self.history_state.select(i.or(Some(0)));
+                    let i = self.data.history_state.selected().map(|i| (i + 1) % len);
+                    self.data.history_state.select(i.or(Some(0)));
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                let len = self.sessions.len();
+                let len = self.data.sessions.len();
                 if len > 0 {
                     let i = self
+                        .data
                         .history_state
                         .selected()
                         .map(|i| if i == 0 { len - 1 } else { i - 1 });
-                    self.history_state.select(i.or(Some(0)));
+                    self.data.history_state.select(i.or(Some(0)));
                 }
             }
             KeyCode::Char('d') => {
                 // Delete selected session
-                if let Some(idx) = self.history_state.selected()
-                    && idx < self.sessions.len()
-                    && let Some(id) = self.sessions[idx].id
+                if let Some(idx) = self.data.history_state.selected()
+                    && idx < self.data.sessions.len()
+                    && let Some(id) = self.data.sessions[idx].id
                     && let Some(ref db) = self.db
                 {
-                    let _ = db::queries::delete_session(&db.conn, id);
+                    if let Err(e) = db::queries::delete_session(&db.conn, id) {
+                        eprintln!("Failed to delete session: {}", e);
+                    }
                     self.refresh_data();
                 }
             }
@@ -373,11 +418,11 @@ impl App {
     fn handle_stats_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Left | KeyCode::Char('h') => {
-                self.stats_period = self.stats_period.prev();
+                self.data.stats_period = self.data.stats_period.prev();
                 self.refresh_data();
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                self.stats_period = self.stats_period.next();
+                self.data.stats_period = self.data.stats_period.next();
                 self.refresh_data();
             }
             _ => {}
@@ -388,47 +433,48 @@ impl App {
     fn handle_input_modal_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc => {
-                self.show_input_modal = false;
+                self.modal = ModalState::None;
             }
             KeyCode::Tab => {
-                self.input_field = self.input_field.next();
+                self.input.field = self.input.field.next();
             }
             KeyCode::Enter => {
-                if !self.input_name.is_empty() {
+                if !self.input.name.is_empty() {
                     self.create_session();
-                    self.show_input_modal = false;
+                    self.modal = ModalState::None;
                     self.start_timer();
                 }
             }
-            KeyCode::Backspace => match self.input_field {
+            KeyCode::Backspace => match self.input.field {
                 InputField::Name => {
-                    self.input_name.pop();
+                    self.input.name.pop();
                 }
                 InputField::Description => {
-                    self.input_description.pop();
+                    self.input.description.pop();
                 }
                 InputField::Category => {}
             },
             KeyCode::Left => {
-                if self.input_field == InputField::Category {
-                    if self.selected_category == 0 {
-                        self.selected_category = self.categories.len() - 1;
+                if self.input.field == InputField::Category {
+                    if self.input.selected_category == 0 {
+                        self.input.selected_category = self.data.categories.len() - 1;
                     } else {
-                        self.selected_category -= 1;
+                        self.input.selected_category -= 1;
                     }
                 }
             }
             KeyCode::Right => {
-                if self.input_field == InputField::Category {
-                    self.selected_category = (self.selected_category + 1) % self.categories.len();
+                if self.input.field == InputField::Category {
+                    self.input.selected_category =
+                        (self.input.selected_category + 1) % self.data.categories.len();
                 }
             }
-            KeyCode::Char(c) => match self.input_field {
+            KeyCode::Char(c) => match self.input.field {
                 InputField::Name => {
-                    self.input_name.push(c);
+                    self.input.name.push(c);
                 }
                 InputField::Description => {
-                    self.input_description.push(c);
+                    self.input.description.push(c);
                 }
                 InputField::Category => {}
             },
@@ -440,27 +486,27 @@ impl App {
     fn handle_settings_modal_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc => {
-                self.show_settings_modal = false;
+                self.modal = ModalState::None;
             }
             KeyCode::Tab | KeyCode::Down => {
                 self.apply_editing_value();
-                self.settings_field = self.settings_field.next();
-                self.settings_editing_value = self.get_editing_field_value();
+                self.settings.field = self.settings.field.next();
+                self.settings.editing_value = self.get_editing_field_value();
             }
             KeyCode::Up => {
                 self.apply_editing_value();
-                self.settings_field = self.settings_field.prev();
-                self.settings_editing_value = self.get_editing_field_value();
+                self.settings.field = self.settings.field.prev();
+                self.settings.editing_value = self.get_editing_field_value();
             }
             KeyCode::Enter => {
                 self.save_settings();
-                self.show_settings_modal = false;
+                self.modal = ModalState::None;
             }
             KeyCode::Backspace => {
-                self.settings_editing_value.pop();
+                self.settings.editing_value.pop();
             }
             KeyCode::Char(c) if c.is_ascii_digit() => {
-                self.settings_editing_value.push(c);
+                self.settings.editing_value.push(c);
             }
             _ => {}
         }
@@ -468,35 +514,41 @@ impl App {
 
     /// Get the current value for the selected settings field from editing_config
     fn get_editing_field_value(&self) -> String {
-        match self.settings_field {
+        match self.settings.field {
             SettingsField::WorkDuration => {
-                (self.editing_config.work_duration_secs / 60).to_string()
+                (self.settings.editing_config.work_duration_secs / 60).to_string()
             }
-            SettingsField::ShortBreak => (self.editing_config.short_break_secs / 60).to_string(),
-            SettingsField::LongBreak => (self.editing_config.long_break_secs / 60).to_string(),
-            SettingsField::SessionsUntilLong => {
-                self.editing_config.sessions_until_long_break.to_string()
+            SettingsField::ShortBreak => {
+                (self.settings.editing_config.short_break_secs / 60).to_string()
             }
+            SettingsField::LongBreak => {
+                (self.settings.editing_config.long_break_secs / 60).to_string()
+            }
+            SettingsField::SessionsUntilLong => self
+                .settings
+                .editing_config
+                .sessions_until_long_break
+                .to_string(),
         }
     }
 
     /// Apply the current editing value to editing_config
     fn apply_editing_value(&mut self) {
-        if let Ok(value) = self.settings_editing_value.parse::<i64>()
+        if let Ok(value) = self.settings.editing_value.parse::<i64>()
             && value > 0
         {
-            match self.settings_field {
+            match self.settings.field {
                 SettingsField::WorkDuration => {
-                    self.editing_config.work_duration_secs = value * 60;
+                    self.settings.editing_config.work_duration_secs = value * 60;
                 }
                 SettingsField::ShortBreak => {
-                    self.editing_config.short_break_secs = value * 60;
+                    self.settings.editing_config.short_break_secs = value * 60;
                 }
                 SettingsField::LongBreak => {
-                    self.editing_config.long_break_secs = value * 60;
+                    self.settings.editing_config.long_break_secs = value * 60;
                 }
                 SettingsField::SessionsUntilLong => {
-                    self.editing_config.sessions_until_long_break = value;
+                    self.settings.editing_config.sessions_until_long_break = value;
                 }
             }
         }
@@ -508,14 +560,16 @@ impl App {
         self.apply_editing_value();
 
         // Commit editing_config to config
-        self.config = self.editing_config.clone();
+        self.data.config = self.settings.editing_config.clone();
 
         // Apply to timer
-        self.timer.apply_config(&self.config);
+        self.timer.apply_config(&self.data.config);
 
         // Save to database
-        if let Some(ref db) = self.db {
-            let _ = db::save_config(&db.conn, &self.config);
+        if let Some(ref db) = self.db
+            && let Err(e) = db::save_config(&db.conn, &self.data.config)
+        {
+            eprintln!("Failed to save config: {}", e);
         }
     }
 
@@ -539,46 +593,71 @@ impl App {
 
     /// Start the timer
     fn start_timer(&mut self) {
-        self.session_start_time = Some(Local::now().timestamp());
+        let phase = std::mem::take(&mut self.session_phase);
+
+        self.session_phase = match phase {
+            SessionPhase::Ready(session) => SessionPhase::Active {
+                session,
+                start_time: Timestamp::now(),
+            },
+            SessionPhase::Active { session, .. } => SessionPhase::Active {
+                session,
+                start_time: Timestamp::now(),
+            },
+            SessionPhase::Inactive => SessionPhase::Inactive,
+        };
+
         self.timer.start();
     }
 
     /// Create a new session from input
     fn create_session(&mut self) {
-        let category = self.categories[self.selected_category].name.clone();
-        let description = if self.input_description.is_empty() {
+        let category = self.data.categories[self.input.selected_category]
+            .name
+            .clone();
+        let description = if self.input.description.is_empty() {
             None
         } else {
-            Some(self.input_description.clone())
+            Some(self.input.description.to_string())
         };
 
-        self.current_session = Some(Session {
-            id: None,
-            name: self.input_name.clone(),
-            description,
-            category,
-            started_at: 0,
-            ended_at: 0,
-            duration_secs: 0,
-        });
+        let session = Session::builder()
+            .name(self.input.name.to_string())
+            .description(description)
+            .category(category)
+            .started_at(Timestamp::new(0))
+            .ended_at(Timestamp::new(0))
+            .duration_secs(DurationSecs::new(0))
+            .build()
+            .expect("session fields validated by UI");
+
+        self.session_phase = SessionPhase::Ready(session);
     }
 
     /// Complete the current session and save to database
     fn complete_session(&mut self) {
-        if let (Some(session), Some(start_time)) =
-            (&mut self.current_session, self.session_start_time)
-        {
-            let end_time = Local::now().timestamp();
-            session.started_at = start_time;
-            session.ended_at = end_time;
-            session.duration_secs = end_time - start_time;
+        let phase = std::mem::take(&mut self.session_phase);
 
-            if let Some(ref db) = self.db {
-                let _ = db::save_session(&db.conn, session);
+        self.session_phase = match phase {
+            SessionPhase::Active {
+                mut session,
+                start_time,
+            } => {
+                let end_time = Timestamp::now();
+                session.started_at = start_time;
+                session.ended_at = end_time;
+                session.duration_secs = end_time - start_time;
+
+                if let Some(ref db) = self.db
+                    && let Err(e) = db::save_session(&db.conn, &session)
+                {
+                    eprintln!("Failed to save session: {}", e);
+                }
+
+                SessionPhase::Ready(session)
             }
-
-            self.session_start_time = None;
-        }
+            other => other,
+        };
     }
 
     /// Refresh data from database
@@ -588,13 +667,13 @@ impl App {
             let now = Local::now().timestamp();
             let thirty_days_ago = now - (30 * 24 * 60 * 60);
             if let Ok(sessions) = db::get_sessions_in_range(&db.conn, thirty_days_ago, now) {
-                self.sessions = sessions;
+                self.data.sessions = sessions;
             }
 
             // Load category stats for current period
-            let (start, end) = self.stats_period.time_range();
+            let (start, end) = self.data.stats_period.time_range();
             if let Ok(stats) = db::get_time_by_category(&db.conn, start, end) {
-                self.category_stats = stats;
+                self.data.category_stats = stats;
             }
         }
     }
@@ -612,64 +691,64 @@ mod tests {
     #[test]
     fn test_settings_editing_buffer_isolation() {
         let mut app = App::default();
-        app.config.work_duration_secs = 25 * 60;
+        app.data.config.work_duration_secs = 25 * 60;
 
         // Simulate opening settings modal
-        app.editing_config = app.config.clone();
-        app.settings_field = SettingsField::WorkDuration;
-        app.settings_editing_value = "30".to_string();
+        app.settings.editing_config = app.data.config.clone();
+        app.settings.field = SettingsField::WorkDuration;
+        app.settings.editing_value = "30".to_string();
 
         // Apply the editing value (simulates navigation)
         app.apply_editing_value();
 
         // editing_config should be updated, config should not
-        assert_eq!(app.editing_config.work_duration_secs, 30 * 60);
-        assert_eq!(app.config.work_duration_secs, 25 * 60);
+        assert_eq!(app.settings.editing_config.work_duration_secs, 30 * 60);
+        assert_eq!(app.data.config.work_duration_secs, 25 * 60);
     }
 
     #[test]
     fn test_settings_save_commits_all_changes() {
         let mut app = App::default();
-        app.config.work_duration_secs = 25 * 60;
-        app.config.short_break_secs = 5 * 60;
+        app.data.config.work_duration_secs = 25 * 60;
+        app.data.config.short_break_secs = 5 * 60;
 
         // Simulate editing multiple fields
-        app.editing_config = app.config.clone();
+        app.settings.editing_config = app.data.config.clone();
 
         // Edit work duration
-        app.settings_field = SettingsField::WorkDuration;
-        app.settings_editing_value = "30".to_string();
+        app.settings.field = SettingsField::WorkDuration;
+        app.settings.editing_value = "30".to_string();
         app.apply_editing_value();
 
         // Navigate to short break and edit it
-        app.settings_field = SettingsField::ShortBreak;
-        app.settings_editing_value = "10".to_string();
+        app.settings.field = SettingsField::ShortBreak;
+        app.settings.editing_value = "10".to_string();
         app.apply_editing_value();
 
         // Save should commit both changes
-        app.settings_field = SettingsField::ShortBreak;
-        app.settings_editing_value = "10".to_string();
+        app.settings.field = SettingsField::ShortBreak;
+        app.settings.editing_value = "10".to_string();
         app.save_settings();
 
-        assert_eq!(app.config.work_duration_secs, 30 * 60);
-        assert_eq!(app.config.short_break_secs, 10 * 60);
+        assert_eq!(app.data.config.work_duration_secs, 30 * 60);
+        assert_eq!(app.data.config.short_break_secs, 10 * 60);
     }
 
     #[test]
     fn test_settings_cancel_discards_changes() {
         let mut app = App::default();
-        app.config.work_duration_secs = 25 * 60;
+        app.data.config.work_duration_secs = 25 * 60;
 
         // Simulate editing
-        app.editing_config = app.config.clone();
-        app.settings_field = SettingsField::WorkDuration;
-        app.settings_editing_value = "30".to_string();
+        app.settings.editing_config = app.data.config.clone();
+        app.settings.field = SettingsField::WorkDuration;
+        app.settings.editing_value = "30".to_string();
         app.apply_editing_value();
 
         // Cancel (just close modal without saving)
-        app.show_settings_modal = false;
+        app.modal = ModalState::None;
 
         // Config should be unchanged
-        assert_eq!(app.config.work_duration_secs, 25 * 60);
+        assert_eq!(app.data.config.work_duration_secs, 25 * 60);
     }
 }

@@ -1,9 +1,9 @@
 use rusqlite::{Connection, params};
 
-use crate::models::{Category, Config, Session};
+use crate::models::{Category, CategoryStat, Config, Session, SessionId};
 
 /// Save a session to the database
-pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<i64> {
+pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<SessionId> {
     conn.execute(
         "INSERT INTO sessions (name, description, category, started_at, ended_at, duration_secs)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -16,7 +16,7 @@ pub fn save_session(conn: &Connection, session: &Session) -> rusqlite::Result<i6
             session.duration_secs,
         ],
     )?;
-    Ok(conn.last_insert_rowid())
+    Ok(SessionId::new(conn.last_insert_rowid()))
 }
 
 /// Get sessions within a time range
@@ -52,7 +52,7 @@ pub fn get_time_by_category(
     conn: &Connection,
     start: i64,
     end: i64,
-) -> rusqlite::Result<Vec<(String, i64)>> {
+) -> rusqlite::Result<Vec<CategoryStat>> {
     let mut stmt = conn.prepare(
         "SELECT category, SUM(duration_secs) as total
          FROM sessions
@@ -61,7 +61,12 @@ pub fn get_time_by_category(
          ORDER BY total DESC",
     )?;
 
-    let results = stmt.query_map(params![start, end], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let results = stmt.query_map(params![start, end], |row| {
+        Ok(CategoryStat {
+            name: row.get(0)?,
+            total_seconds: row.get(1)?,
+        })
+    })?;
 
     results.collect()
 }
@@ -82,7 +87,7 @@ pub fn get_categories(conn: &Connection) -> rusqlite::Result<Vec<Category>> {
 }
 
 /// Delete a session by ID
-pub fn delete_session(conn: &Connection, id: i64) -> rusqlite::Result<usize> {
+pub fn delete_session(conn: &Connection, id: SessionId) -> rusqlite::Result<usize> {
     conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])
 }
 
@@ -130,6 +135,7 @@ pub fn save_config(conn: &Connection, config: &Config) -> rusqlite::Result<()> {
 mod tests {
     use super::*;
     use crate::db::Database;
+    use crate::models::{DurationSecs, Timestamp};
 
     #[test]
     fn test_save_and_load_session() {
@@ -139,18 +145,18 @@ mod tests {
             name: "Test session".to_string(),
             description: Some("Description".to_string()),
             category: "coding".to_string(),
-            started_at: 1000,
-            ended_at: 2500,
-            duration_secs: 1500,
+            started_at: Timestamp::new(1000),
+            ended_at: Timestamp::new(2500),
+            duration_secs: DurationSecs::new(1500),
         };
 
         let id = save_session(&db.conn, &session).unwrap();
-        assert!(id > 0);
+        assert!(i64::from(id) > 0);
 
         let sessions = get_sessions_in_range(&db.conn, 0, 3000).unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].name, "Test session");
-        assert_eq!(sessions[0].duration_secs, 1500);
+        assert_eq!(sessions[0].duration_secs, DurationSecs::new(1500));
     }
 
     #[test]
@@ -162,27 +168,27 @@ mod tests {
             name: "Work 1".to_string(),
             description: None,
             category: "coding".to_string(),
-            started_at: 1000,
-            ended_at: 2000,
-            duration_secs: 1000,
+            started_at: Timestamp::new(1000),
+            ended_at: Timestamp::new(2000),
+            duration_secs: DurationSecs::new(1000),
         };
         let s2 = Session {
             id: None,
             name: "Work 2".to_string(),
             description: None,
             category: "coding".to_string(),
-            started_at: 2000,
-            ended_at: 3000,
-            duration_secs: 1000,
+            started_at: Timestamp::new(2000),
+            ended_at: Timestamp::new(3000),
+            duration_secs: DurationSecs::new(1000),
         };
         let s3 = Session {
             id: None,
             name: "Meeting".to_string(),
             description: None,
             category: "work".to_string(),
-            started_at: 3000,
-            ended_at: 4000,
-            duration_secs: 1000,
+            started_at: Timestamp::new(3000),
+            ended_at: Timestamp::new(4000),
+            duration_secs: DurationSecs::new(1000),
         };
 
         save_session(&db.conn, &s1).unwrap();
@@ -192,8 +198,10 @@ mod tests {
         let totals = get_time_by_category(&db.conn, 0, 5000).unwrap();
         assert_eq!(totals.len(), 2);
         // coding: 2000 seconds, work: 1000 seconds
-        assert_eq!(totals[0], ("coding".to_string(), 2000));
-        assert_eq!(totals[1], ("work".to_string(), 1000));
+        assert_eq!(totals[0].name, "coding");
+        assert_eq!(totals[0].total_seconds, 2000);
+        assert_eq!(totals[1].name, "work");
+        assert_eq!(totals[1].total_seconds, 1000);
     }
 
     #[test]

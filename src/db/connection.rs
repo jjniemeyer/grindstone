@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 
 use crate::config::get_db_path;
+use crate::error::Result;
 
 use super::schema::init_schema;
 
@@ -11,7 +12,7 @@ pub struct Database {
 
 impl Database {
     /// Open the database, creating it if necessary
-    pub fn open() -> color_eyre::Result<Self> {
+    pub fn open() -> Result<Self> {
         let path = get_db_path()?;
         let conn = Connection::open(&path)?;
         init_schema(&conn)?;
@@ -20,7 +21,7 @@ impl Database {
 
     /// Open an in-memory database (for testing)
     #[cfg(test)]
-    pub fn open_in_memory() -> color_eyre::Result<Self> {
+    pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         init_schema(&conn)?;
         Ok(Self { conn })

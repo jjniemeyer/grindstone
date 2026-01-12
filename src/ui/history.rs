@@ -26,7 +26,7 @@ pub fn render_history(frame: &mut Frame, area: Rect, app: &mut App) {
     );
 
     // Session list grouped by day
-    let items: Vec<ListItem> = build_history_items(&app.sessions);
+    let items: Vec<ListItem> = build_history_items(&app.data.sessions);
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::NONE))
@@ -37,7 +37,7 @@ pub fn render_history(frame: &mut Frame, area: Rect, app: &mut App) {
         )
         .highlight_symbol("> ");
 
-    frame.render_stateful_widget(list, chunks[1], &mut app.history_state);
+    frame.render_stateful_widget(list, chunks[1], &mut app.data.history_state);
 
     // Controls
     let controls = "[j/k] Navigate  [d] Delete  [Tab] Timer  [t] Stats  [q] Quit";
