@@ -14,7 +14,7 @@ pub use queries::{
 };
 
 /// Trait for database operations, enabling testability via mocking
-pub trait DatabaseOps: Send + Sync {
+pub trait DatabaseOps {
     fn save_session(&self, session: &Session) -> Result<SessionId>;
     fn delete_session(&self, id: SessionId) -> Result<usize>;
     fn get_sessions_in_range(&self, start: i64, end: i64) -> Result<Vec<Session>>;
