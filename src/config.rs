@@ -22,3 +22,16 @@ pub fn get_db_path() -> Result<PathBuf> {
 
     Ok(data_dir.join("grindstone.db"))
 }
+
+/// Get the path to the log file.
+///
+/// Returns the path to `grindstone.log` in the same data directory as the database.
+pub fn get_log_path() -> Result<PathBuf> {
+    let proj_dirs =
+        ProjectDirs::from("", "", "grindstone").ok_or(GrindstoneError::NoDataDirectory)?;
+
+    let data_dir = proj_dirs.data_dir();
+    std::fs::create_dir_all(data_dir)?;
+
+    Ok(data_dir.join("grindstone.log"))
+}
