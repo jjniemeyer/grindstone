@@ -5,7 +5,7 @@ use ratatui::{DefaultTerminal, Frame, widgets::ListState};
 
 use crate::clock::{Clock, SystemClock};
 use crate::config::TICK_RATE;
-use crate::db::{self, Database};
+use crate::db::{Database, DatabaseOps};
 use crate::event::{AppEvent, poll_event};
 use crate::models::{
     BoundedString, Category, CategoryId, CategoryStat, Config, DurationSecs, Session, Timestamp,
@@ -62,11 +62,6 @@ impl StatsPeriod {
         };
 
         (start.timestamp(), end.timestamp())
-    }
-
-    /// Get the start and end timestamps for this period (uses system time)
-    pub fn time_range(&self) -> (i64, i64) {
-        self.time_range_with_clock(&SystemClock)
     }
 
     pub fn next(&self) -> Self {
@@ -239,7 +234,7 @@ pub struct App {
     pub settings: SettingsState,
     pub data: AppData,
     pub notification: Option<Notification>,
-    db: Option<Database>,
+    db: Option<Box<dyn DatabaseOps>>,
     clock: Box<dyn Clock>,
 }
 
@@ -276,20 +271,22 @@ impl App {
         // Open database and load data
         match Database::open() {
             Ok(database) => {
+                let db: Box<dyn DatabaseOps> = Box::new(database);
+
                 // Load categories
-                if let Ok(cats) = db::get_categories(&database.conn)
+                if let Ok(cats) = db.get_categories()
                     && !cats.is_empty()
                 {
                     app.data.categories = cats;
                 }
 
                 // Load config and apply to timer
-                if let Ok(config) = db::get_config(&database.conn) {
+                if let Ok(config) = db.get_config() {
                     app.timer.apply_config(&config);
                     app.data.config = config;
                 }
 
-                app.db = Some(database);
+                app.db = Some(db);
                 app.refresh_data();
             }
             Err(e) => {
@@ -457,7 +454,7 @@ impl App {
                     && let Some(id) = self.data.sessions[idx].id
                     && let Some(ref db) = self.db
                 {
-                    if let Err(e) = db::queries::delete_session(&db.conn, id) {
+                    if let Err(e) = db.delete_session(id) {
                         warn!("Failed to delete session: {}", e);
                         self.notify(NotificationLevel::Warning, "Failed to delete session");
                     }
@@ -726,7 +723,7 @@ impl App {
         if let Some(ref db) = self.db {
             let result = if let Some(id) = self.settings.editing_category_id {
                 // Update existing category
-                db::update_category(&db.conn, id, &name, color)
+                db.update_category(id, &name, color)
                     .map(|_| ())
                     .map_err(|e| e.to_string())
             } else {
@@ -736,7 +733,7 @@ impl App {
                     return;
                 }
                 // Create new category
-                db::create_category(&db.conn, &name, color)
+                db.create_category(&name, color)
                     .map(|_| ())
                     .map_err(|e| e.to_string())
             };
@@ -776,7 +773,7 @@ impl App {
 
         if let Some(ref db) = self.db {
             // Check if category is in use
-            match db::is_category_in_use(&db.conn, &category_name) {
+            match db.is_category_in_use(&category_name) {
                 Ok(true) => {
                     self.notify(
                         NotificationLevel::Warning,
@@ -792,7 +789,7 @@ impl App {
             }
 
             // Delete the category
-            match db::delete_category(&db.conn, category_id) {
+            match db.delete_category(category_id) {
                 Ok(_) => {
                     self.refresh_categories();
                     // Adjust selection if needed
@@ -813,7 +810,7 @@ impl App {
     /// Refresh categories from database
     fn refresh_categories(&mut self) {
         if let Some(ref db) = self.db
-            && let Ok(cats) = db::get_categories(&db.conn)
+            && let Ok(cats) = db.get_categories()
             && !cats.is_empty()
         {
             self.data.categories = cats;
@@ -884,7 +881,7 @@ impl App {
 
         // Save to database
         if let Some(ref db) = self.db
-            && let Err(e) = db::save_config(&db.conn, &self.data.config)
+            && let Err(e) = db.save_config(&self.data.config)
         {
             warn!("Failed to save config: {}", e);
             self.notify(NotificationLevel::Warning, "Failed to save settings");
@@ -967,7 +964,7 @@ impl App {
                 session.duration_secs = end_time - start_time;
 
                 if let Some(ref db) = self.db
-                    && let Err(e) = db::save_session(&db.conn, &session)
+                    && let Err(e) = db.save_session(&session)
                 {
                     error!("Failed to save session: {}", e);
                     self.notify(NotificationLevel::Error, "Failed to save session!");
@@ -985,13 +982,13 @@ impl App {
             // Load sessions for history (last 30 days)
             let now = self.clock.now_timestamp();
             let thirty_days_ago = now - (30 * 24 * 60 * 60);
-            if let Ok(sessions) = db::get_sessions_in_range(&db.conn, thirty_days_ago, now) {
+            if let Ok(sessions) = db.get_sessions_in_range(thirty_days_ago, now) {
                 self.data.sessions = sessions;
             }
 
             // Load category stats for current period
             let (start, end) = self.data.stats_period.time_range_with_clock(&*self.clock);
-            if let Ok(stats) = db::get_time_by_category(&db.conn, start, end) {
+            if let Ok(stats) = db.get_time_by_category(start, end) {
                 self.data.category_stats = stats;
             }
         }
