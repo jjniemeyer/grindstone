@@ -1,5 +1,6 @@
 use chrono::{Datelike, Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use log::{error, warn};
 use ratatui::{DefaultTerminal, Frame, widgets::ListState};
 
 use crate::config::TICK_RATE;
@@ -259,8 +260,8 @@ impl App {
                 app.refresh_data();
             }
             Err(e) => {
-                eprintln!("Warning: Could not open database: {}", e);
-                // Continue without database
+                warn!("Could not open database: {}", e);
+                app.notify(NotificationLevel::Warning, "Running without database");
             }
         }
 
@@ -424,7 +425,8 @@ impl App {
                     && let Some(ref db) = self.db
                 {
                     if let Err(e) = db::queries::delete_session(&db.conn, id) {
-                        eprintln!("Failed to delete session: {}", e);
+                        warn!("Failed to delete session: {}", e);
+                        self.notify(NotificationLevel::Warning, "Failed to delete session");
                     }
                     self.refresh_data();
                 }
@@ -588,7 +590,8 @@ impl App {
         if let Some(ref db) = self.db
             && let Err(e) = db::save_config(&db.conn, &self.data.config)
         {
-            eprintln!("Failed to save config: {}", e);
+            warn!("Failed to save config: {}", e);
+            self.notify(NotificationLevel::Warning, "Failed to save settings");
         }
     }
 
@@ -670,7 +673,8 @@ impl App {
                 if let Some(ref db) = self.db
                     && let Err(e) = db::save_session(&db.conn, &session)
                 {
-                    eprintln!("Failed to save session: {}", e);
+                    error!("Failed to save session: {}", e);
+                    self.notify(NotificationLevel::Error, "Failed to save session!");
                 }
 
                 SessionPhase::Ready(session)
