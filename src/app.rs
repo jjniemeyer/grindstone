@@ -453,18 +453,38 @@ impl App {
         }
     }
 
+    /// Count the number of rendered list items in history view (sessions + date headers)
+    fn count_history_list_items(sessions: &[Session]) -> usize {
+        let mut count = 0;
+        let mut current_date: Option<(i32, u32, u32)> = None;
+
+        for session in sessions {
+            let dt = session.start_datetime();
+            let date = (dt.year(), dt.month(), dt.day());
+
+            // Add header for new date
+            if current_date != Some(date) {
+                current_date = Some(date);
+                count += 1;
+            }
+            // Add session item
+            count += 1;
+        }
+        count.max(1) // At least 1 for "No sessions" message
+    }
+
     /// Handle history view keys
     fn handle_history_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                let len = self.data.sessions.len();
+                let len = Self::count_history_list_items(&self.data.sessions);
                 if len > 0 {
                     let i = self.data.history_state.selected().map(|i| (i + 1) % len);
                     self.data.history_state.select(i.or(Some(0)));
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                let len = self.data.sessions.len();
+                let len = Self::count_history_list_items(&self.data.sessions);
                 if len > 0 {
                     let i = self
                         .data
