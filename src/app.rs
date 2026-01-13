@@ -156,6 +156,7 @@ pub enum ModalState {
     None,
     Input,
     Settings,
+    Detail,
 }
 
 /// The current session lifecycle state
@@ -232,6 +233,12 @@ pub struct SettingsState {
     pub editing_category_id: Option<CategoryId>, // Some when editing, None when creating
 }
 
+/// State for the session detail modal
+#[derive(Debug, Clone, Default)]
+pub struct DetailState {
+    pub selected_session_index: usize,
+}
+
 /// Persisted application data
 #[derive(Debug, Clone, Default)]
 pub struct AppData {
@@ -253,6 +260,7 @@ pub struct App {
     pub session_phase: SessionPhase,
     pub input: InputState,
     pub settings: SettingsState,
+    pub detail: DetailState,
     pub data: AppData,
     pub notification: Option<Notification>,
     db: Option<Box<dyn DatabaseOps>>,
@@ -269,6 +277,7 @@ impl Default for App {
             session_phase: SessionPhase::Inactive,
             input: InputState::default(),
             settings: SettingsState::default(),
+            detail: DetailState::default(),
             data: AppData {
                 categories: Category::defaults(),
                 config: Config::default(),
@@ -366,6 +375,7 @@ impl App {
             ModalState::None => {}
             ModalState::Input => render_input_modal(frame, area, self),
             ModalState::Settings => render_settings_modal(frame, area, self),
+            ModalState::Detail => {} // TODO: render_detail_modal(frame, area, self),
         }
     }
 
@@ -384,6 +394,7 @@ impl App {
                 self.handle_input_modal_key(key);
                 return;
             }
+            ModalState::Detail => {} // TODO: handle detail modal keys
             ModalState::None => {}
         }
 
