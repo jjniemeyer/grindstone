@@ -491,6 +491,33 @@ impl App {
         count.max(1) // At least 1 for "No sessions" message
     }
 
+    /// Map a rendered list index to the actual session index (skipping headers)
+    fn list_index_to_session_index(sessions: &[Session], list_idx: usize) -> Option<usize> {
+        let mut rendered_idx = 0;
+        let mut current_date: Option<(i32, u32, u32)> = None;
+
+        for (session_idx, session) in sessions.iter().enumerate() {
+            let dt = session.start_datetime();
+            let date = (dt.year(), dt.month(), dt.day());
+
+            // Check for date header
+            if current_date != Some(date) {
+                current_date = Some(date);
+                if rendered_idx == list_idx {
+                    return None; // Selected a header, not a session
+                }
+                rendered_idx += 1;
+            }
+
+            // Check for session
+            if rendered_idx == list_idx {
+                return Some(session_idx);
+            }
+            rendered_idx += 1;
+        }
+        None
+    }
+
     /// Handle history view keys
     fn handle_history_key(&mut self, key: KeyEvent) {
         match key.code {
@@ -524,6 +551,16 @@ impl App {
                         self.notify(NotificationLevel::Warning, "Failed to delete session");
                     }
                     self.refresh_data();
+                }
+            }
+            KeyCode::Enter => {
+                // Open detail modal for selected session
+                if let Some(list_idx) = self.data.history_state.selected()
+                    && let Some(session_idx) =
+                        Self::list_index_to_session_index(&self.data.sessions, list_idx)
+                {
+                    self.detail.selected_session_index = session_idx;
+                    self.modal = ModalState::Detail;
                 }
             }
             _ => {}

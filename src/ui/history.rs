@@ -43,7 +43,7 @@ pub fn render_history(frame: &mut Frame, area: Rect, app: &mut App) {
     frame.render_stateful_widget(list, chunks[1], &mut app.data.history_state);
 
     // Controls
-    let controls = "[j/k] Navigate  [d] Delete";
+    let controls = "[j/k] Navigate  [Enter] Details  [d] Delete";
     frame.render_widget(
         Paragraph::new(controls)
             .centered()

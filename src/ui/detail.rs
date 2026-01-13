@@ -36,10 +36,7 @@ pub fn render_detail_modal(frame: &mut Frame, area: Rect, app: &App) {
     if session_idx >= app.data.sessions.len() {
         // Invalid index, show error
         let error_text = "Error: Session not found";
-        frame.render_widget(
-            Paragraph::new(error_text).centered().fg(Color::Red),
-            inner,
-        );
+        frame.render_widget(Paragraph::new(error_text).centered().fg(Color::Red), inner);
         return;
     }
 
