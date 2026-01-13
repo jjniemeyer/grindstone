@@ -640,14 +640,18 @@ impl App {
 
     /// Handle settings modal keys
     fn handle_settings_modal_key(&mut self, key: KeyEvent) {
-        // Mode switching (works in both modes when not editing)
-        if self.settings.category_field == CategoryField::List {
+        // Mode switching with arrows and vim keys (h/l)
+        // Only block when editing category form fields (Name/Color need text input)
+        let editing_category_form = self.settings.mode == SettingsMode::Categories
+            && self.settings.category_field != CategoryField::List;
+
+        if !editing_category_form {
             match key.code {
-                KeyCode::Char('1') => {
+                KeyCode::Left | KeyCode::Char('h') => {
                     self.settings.mode = SettingsMode::Timer;
                     return;
                 }
-                KeyCode::Char('2') => {
+                KeyCode::Right | KeyCode::Char('l') => {
                     self.settings.mode = SettingsMode::Categories;
                     return;
                 }

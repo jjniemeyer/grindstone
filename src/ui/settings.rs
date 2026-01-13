@@ -53,7 +53,7 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
             Span::raw(" Save  "),
             Span::styled("[Tab/↑↓]", Style::default().bold()),
             Span::raw(" Navigate  "),
-            Span::styled("[1/2]", Style::default().bold()),
+            Span::styled("[h/l]", Style::default().bold()),
             Span::raw(" Mode  "),
             Span::styled("[Esc]", Style::default().bold()),
             Span::raw(" Close"),
@@ -67,7 +67,7 @@ pub fn render_settings_modal(frame: &mut Frame, area: Rect, app: &App) {
             Span::raw(" Delete  "),
             Span::styled("[j/k]", Style::default().bold()),
             Span::raw(" Nav  "),
-            Span::styled("[1/2]", Style::default().bold()),
+            Span::styled("[h/l]", Style::default().bold()),
             Span::raw(" Mode  "),
             Span::styled("[Esc]", Style::default().bold()),
             Span::raw(" Close"),
@@ -90,9 +90,9 @@ fn render_mode_tabs(frame: &mut Frame, area: Rect, app: &App) {
     };
 
     let tabs = Line::from(vec![
-        Span::styled("[1] Timer", timer_style),
+        Span::styled("← Timer", timer_style),
         Span::raw("   "),
-        Span::styled("[2] Categories", cat_style),
+        Span::styled("Categories →", cat_style),
     ]);
     frame.render_widget(Paragraph::new(tabs).centered(), area);
 }
