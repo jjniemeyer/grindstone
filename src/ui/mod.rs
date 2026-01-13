@@ -1,3 +1,4 @@
+mod detail;
 mod history;
 mod input;
 mod settings;
@@ -13,6 +14,7 @@ use ratatui::{
 
 use crate::app::{App, NotificationLevel};
 
+pub use detail::render_detail_modal;
 pub use history::render_history;
 pub use input::render_input_modal;
 pub use settings::render_settings_modal;

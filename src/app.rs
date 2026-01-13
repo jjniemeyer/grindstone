@@ -12,7 +12,8 @@ use crate::models::{
 };
 use crate::timer::PomodoroTimer;
 use crate::ui::{
-    render_history, render_input_modal, render_settings_modal, render_stats, render_timer,
+    render_detail_modal, render_history, render_input_modal, render_settings_modal, render_stats,
+    render_timer,
 };
 use crate::validation::{
     validate_new_category_name, validate_session_name, validate_update_category_name,
@@ -375,7 +376,7 @@ impl App {
             ModalState::None => {}
             ModalState::Input => render_input_modal(frame, area, self),
             ModalState::Settings => render_settings_modal(frame, area, self),
-            ModalState::Detail => {} // TODO: render_detail_modal(frame, area, self),
+            ModalState::Detail => render_detail_modal(frame, area, self),
         }
     }
 
