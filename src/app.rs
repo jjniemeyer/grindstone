@@ -395,7 +395,13 @@ impl App {
                 self.handle_input_modal_key(key);
                 return;
             }
-            ModalState::Detail => {} // TODO: handle detail modal keys
+            ModalState::Detail => {
+                // Close on Esc or q
+                if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+                    self.modal = ModalState::None;
+                }
+                return;
+            }
             ModalState::None => {}
         }
 
