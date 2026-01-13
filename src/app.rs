@@ -12,7 +12,8 @@ use crate::models::{
 };
 use crate::timer::PomodoroTimer;
 use crate::ui::{
-    render_history, render_input_modal, render_settings_modal, render_stats, render_timer,
+    render_detail_modal, render_history, render_input_modal, render_settings_modal, render_stats,
+    render_timer,
 };
 use crate::validation::{
     validate_new_category_name, validate_session_name, validate_update_category_name,
@@ -156,6 +157,7 @@ pub enum ModalState {
     None,
     Input,
     Settings,
+    Detail,
 }
 
 /// The current session lifecycle state
@@ -232,6 +234,12 @@ pub struct SettingsState {
     pub editing_category_id: Option<CategoryId>, // Some when editing, None when creating
 }
 
+/// State for the session detail modal
+#[derive(Debug, Clone, Default)]
+pub struct DetailState {
+    pub selected_session_index: usize,
+}
+
 /// Persisted application data
 #[derive(Debug, Clone, Default)]
 pub struct AppData {
@@ -253,6 +261,7 @@ pub struct App {
     pub session_phase: SessionPhase,
     pub input: InputState,
     pub settings: SettingsState,
+    pub detail: DetailState,
     pub data: AppData,
     pub notification: Option<Notification>,
     db: Option<Box<dyn DatabaseOps>>,
@@ -269,6 +278,7 @@ impl Default for App {
             session_phase: SessionPhase::Inactive,
             input: InputState::default(),
             settings: SettingsState::default(),
+            detail: DetailState::default(),
             data: AppData {
                 categories: Category::defaults(),
                 config: Config::default(),
@@ -366,6 +376,7 @@ impl App {
             ModalState::None => {}
             ModalState::Input => render_input_modal(frame, area, self),
             ModalState::Settings => render_settings_modal(frame, area, self),
+            ModalState::Detail => render_detail_modal(frame, area, self),
         }
     }
 
@@ -382,6 +393,13 @@ impl App {
             }
             ModalState::Input => {
                 self.handle_input_modal_key(key);
+                return;
+            }
+            ModalState::Detail => {
+                // Close on Esc or q
+                if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+                    self.modal = ModalState::None;
+                }
                 return;
             }
             ModalState::None => {}
@@ -453,18 +471,65 @@ impl App {
         }
     }
 
+    /// Count the number of rendered list items in history view (sessions + date headers)
+    fn count_history_list_items(sessions: &[Session]) -> usize {
+        let mut count = 0;
+        let mut current_date: Option<(i32, u32, u32)> = None;
+
+        for session in sessions {
+            let dt = session.start_datetime();
+            let date = (dt.year(), dt.month(), dt.day());
+
+            // Add header for new date
+            if current_date != Some(date) {
+                current_date = Some(date);
+                count += 1;
+            }
+            // Add session item
+            count += 1;
+        }
+        count.max(1) // At least 1 for "No sessions" message
+    }
+
+    /// Map a rendered list index to the actual session index (skipping headers)
+    fn list_index_to_session_index(sessions: &[Session], list_idx: usize) -> Option<usize> {
+        let mut rendered_idx = 0;
+        let mut current_date: Option<(i32, u32, u32)> = None;
+
+        for (session_idx, session) in sessions.iter().enumerate() {
+            let dt = session.start_datetime();
+            let date = (dt.year(), dt.month(), dt.day());
+
+            // Check for date header
+            if current_date != Some(date) {
+                current_date = Some(date);
+                if rendered_idx == list_idx {
+                    return None; // Selected a header, not a session
+                }
+                rendered_idx += 1;
+            }
+
+            // Check for session
+            if rendered_idx == list_idx {
+                return Some(session_idx);
+            }
+            rendered_idx += 1;
+        }
+        None
+    }
+
     /// Handle history view keys
     fn handle_history_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                let len = self.data.sessions.len();
+                let len = Self::count_history_list_items(&self.data.sessions);
                 if len > 0 {
                     let i = self.data.history_state.selected().map(|i| (i + 1) % len);
                     self.data.history_state.select(i.or(Some(0)));
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                let len = self.data.sessions.len();
+                let len = Self::count_history_list_items(&self.data.sessions);
                 if len > 0 {
                     let i = self
                         .data
@@ -486,6 +551,16 @@ impl App {
                         self.notify(NotificationLevel::Warning, "Failed to delete session");
                     }
                     self.refresh_data();
+                }
+            }
+            KeyCode::Enter => {
+                // Open detail modal for selected session
+                if let Some(list_idx) = self.data.history_state.selected()
+                    && let Some(session_idx) =
+                        Self::list_index_to_session_index(&self.data.sessions, list_idx)
+                {
+                    self.detail.selected_session_index = session_idx;
+                    self.modal = ModalState::Detail;
                 }
             }
             _ => {}
